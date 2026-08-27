@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "im-an-old-sun-box-mcp"
+version = "0.1.0"
+description = "An out-of-band MCP control plane for a QEMU-emulated Sun Niagara lab"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Ryan Nelson" }]
+dependencies = ["mcp>=1.27,<2"]
+
+[project.optional-dependencies]
+test = ["build>=1.3", "pytest>=8.4", "pytest-asyncio>=1.1"]
+
+[project.scripts]
+old-sun-mcp = "old_sun_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/old_sun_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+

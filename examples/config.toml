@@ -1,0 +1,24 @@
+version = 1
+default_run = "demo"
+max_output_bytes = 262144
+default_timeout_seconds = 30
+ledger_dir = ".old-sun-evidence"
+
+[[run_roots]]
+path = "/srv/old-sun-lab/runs"
+manifest = "run.manifest"
+
+[paths]
+classifier = "/opt/old-sun-lab/bin/classify-vm"
+gdb = "/opt/cross/bin/sparc64-unknown-elf-gdb"
+
+[guest_adapters.maintenance]
+kind = "argv"
+socket = "console.sock"
+argv = ["/opt/old-sun-lab/bin/guest-command", "{socket}", "{command}", "{timeout}"]
+env_allowlist = ["TERM"]
+
+[trace_recipes.tcg_stacks]
+argv = ["/opt/old-sun-lab/bin/trace-tcg-stacks", "{pid}", "{duration}"]
+max_duration_seconds = 15
+requires_privilege = true

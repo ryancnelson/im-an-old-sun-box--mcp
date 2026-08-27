@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+.old-sun-evidence/
+.old-sun-mcp.toml
+
+# Lab runtime artifacts never belong in source control.
+*.pid
+*.sock
+*.qcow2
+*.raw
+*.core

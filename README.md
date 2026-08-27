@@ -7,6 +7,11 @@
 
 This is a bespoke MCP control plane for a virtual Sun Niagara laboratory.
 
+Start with the [normative specification](SPEC.md). Work is organized in the
+[canonical TODO list](TODO.md), and the
+[joining and contributing guide](JOINING-AND-CONTRIBUTING.md) explains how an
+idea becomes a scoped branch, tested change, and cleanly closed piece of work.
+
 The point is not to give an agent a polite little remote shell and pretend an
 ancient Solaris guest is a normal cloud VM. The point is to let the agent
 **inhabit the machine** while also giving it the kind of impossible x-ray vision
@@ -98,7 +103,8 @@ experiments—not sanding every tool down until it can only print `hello world`.
 
 ## Status
 
-Fresh repository. The control-plane design is being extracted from a working
+**Specification complete; initial implementation in progress.** The
+control-plane design is being extracted from a working
 QEMU sun4v laboratory that already has guest channels, persistent storage,
 semantic VM classification, live GDB-stub debugging, and host-side performance
 evidence.
