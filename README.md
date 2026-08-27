@@ -132,17 +132,20 @@ across the virtualization boundary, now we're cooking.
 
 ## Status
 
-**The portable 0.1 core is implemented.** Strict configuration, validated run
-identity, guest/HMP/host adapters, immutable evidence and hypothesis history,
-debugger cleanup orchestration, and the MCP stdio server are covered by a test
-suite that uses no live VM, root, or network. CI runs it on macOS and Linux.
+**The portable 0.1 core is implemented, and the first live profile is proven.**
+Strict configuration, validated run identity, guest/HMP/QMP/host adapters,
+immutable evidence and hypothesis history, and the MCP stdio server are covered
+by 58 tests. CI runs the portable suite on macOS and Linux.
 
-Live SPARC GDB profiles, guest DTrace recipes, host eBPF/perf recipes, and the
-project semantic-classifier argv profile remain explicitly unvalidated rather
-than being advertised as magic. The control-plane design was extracted from a working
-QEMU sun4v laboratory that already has guest channels, persistent storage,
-semantic VM classification, live GDB-stub debugging, and host-side performance
-evidence.
+The Niagara profile has also been exercised against a live QEMU 10.2 run. It
+proved the exact PID, queried QMP over a private Unix socket, captured SPARC v9
+registers and instructions with `gdb-multiarch`, detached, and independently
+proved that QEMU returned to `running`. A fresh Codex CLI on the VM host then
+discovered the run and queried its status using only MCP tools.
+
+Guest DTrace recipes, named host eBPF/perf recipes, the project semantic
+classifier, content-addressed diagnostic captures, and automatic wedge rollover
+remain tracked work rather than advertised magic.
 
 The box is old. The debugging rig is not.
 
