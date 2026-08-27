@@ -11,6 +11,8 @@ Start with the [normative specification](SPEC.md). Work is organized in the
 [canonical TODO list](TODO.md), and the
 [joining and contributing guide](JOINING-AND-CONTRIBUTING.md) explains how an
 idea becomes a scoped branch, tested change, and cleanly closed piece of work.
+The [project blog](project-blog/) keeps the chronological, irreverent story
+without turning the normative docs into Friday-night word salad.
 
 The point is not to give an agent a polite little remote shell and pretend an
 ancient Solaris guest is a normal cloud VM. The point is to let the agent
@@ -18,6 +20,8 @@ ancient Solaris guest is a normal cloud VM. The point is to let the agent
 that hardware and kernel hackers dream about:
 
 - a shell inside the Solaris/illumos SPARC guest;
+- guest-native DTrace: probes, aggregations, syscall/provider evidence, and the
+  operating system explaining itself in its own native tongue;
 - out-of-band serial and maintenance channels;
 - QEMU monitor and machine-state access;
 - a SPARC-aware GDB looking directly at the emulated CPU;
@@ -27,6 +31,26 @@ that hardware and kernel hackers dream about:
 
 Guest networking is one of the things being debugged. It is therefore **never
 the prerequisite for debugging it**.
+
+## What this is for
+
+The payoff is a tight repair loop for failures that cross historical and
+virtualization boundaries. Suppose Solaris `ifconfig` barfs on an unexpected
+ioctl. The bug might live in userland assumptions, the illumos networking
+stack, Ryan's emulated Solaris device driver, QEMU's sun4v/device model, or the
+lab configuration connecting them.
+
+This MCP is the apparatus for refusing to guess. Reproduce the symptom, state
+competing layer-specific hypotheses, observe the ioctl with guest DTrace,
+inspect kernel/driver state, correlate it with QEMU and host traces, patch the
+most likely owner, rebuild, reboot or reload deliberately, and run the same
+discriminating test again. That iterative cross-layer loop is the product.
+
+The same applies when `-smp 2` still produces a one-CPU Solaris system. We can
+compare QEMU's vCPU inventory, OpenBoot and sun4v machine description data,
+Solaris CPU discovery/attach evidence, debugger-visible CPU state, and host
+threads instead of treating “other people got SMP working” as an actionable
+diagnosis.
 
 ## The worldview
 
@@ -89,7 +113,7 @@ The intended tool families are explicit about the layer they operate on:
 
 ```text
 lab.*          run discovery, intent, health, and manifests
-guest.*        bounded guest commands and console evidence
+guest.*        bounded guest commands, console evidence, and DTrace
 qemu.*         HMP/QMP queries and deliberate machine control
 debugger.*     SPARC register, instruction, memory, and backtrace capture
 host.trace.*   bounded eBPF/perf/process investigations
@@ -100,6 +124,11 @@ hypothesis.*   predictions, discriminating tests, and falsification
 Raw expert access is a feature, not an embarrassment. The answer to dangerous
 power is precise targeting, bounded execution, visible effects, and recoverable
 experiments—not sanding every tool down until it can only print `hello world`.
+
+DTrace inside the guest and eBPF/perf outside QEMU are complementary x-ray
+angles. Neither is promoted into evidence from the other layer: a DTrace probe
+describes Solaris; a host probe describes the emulator process. When they agree
+across the virtualization boundary, now we're cooking.
 
 ## Status
 

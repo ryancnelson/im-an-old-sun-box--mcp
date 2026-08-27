@@ -11,9 +11,30 @@ the lab easier to understand than you found it.
 3. `docs/plans/` contains implementation plans for work too large to explain in
    a TODO entry.
 4. Tests describe behavior the repository can actually prove today.
+5. `project-blog/` preserves narrative context, personality, discoveries, and
+   the occasional “how drunk was that guy Friday night when he posted?” energy.
 
 README prose explains the project; it does not silently override any of these.
 If they disagree, stop and reconcile them in the same change.
+
+## Put prose in the right room
+
+The project blog is the pressure-release valve that keeps durable project docs
+from becoming word salad.
+
+- Put chronology, motivation, war stories, emerging interpretations, jokes,
+  and the spirit of a working session in `project-blog/`.
+- Put required behavior and safety invariants in `SPEC.md`.
+- Put concrete future work, ownership, blockers, and acceptance criteria in
+  `TODO.md`.
+- Put repeatable commands and prerequisites in operator documentation.
+- Put implementation sequencing and verification commands in `docs/plans/`.
+
+Blog filenames use `YYYY-MM-DD-NN-short-slug.md`, where `NN` preserves order
+within a day. Blog posts may be candid and provisional, but should say what was
+known at the time and must never masquerade as the current contract. When a
+post produces a durable decision or a new piece of work, update the SPEC or add
+a TODO in the same change and link them where useful.
 
 ## Picking up existing work
 
@@ -113,6 +134,8 @@ If work stops, make its state legible:
 At the end of every working session, ask:
 
 - Did I learn a fact that exists only in chat or my head?
+- Did I paste a working-session monologue into a normative document when it
+  belongs in the project blog?
 - Did I create work that lacks a TODO ID?
 - Does the active TODO name the real branch and current blocker?
 - Did behavior change without tests, SPEC, or operator docs changing with it?
@@ -120,4 +143,3 @@ At the end of every working session, ask:
 
 If any answer is uncomfortable, fix the record before starting the next shiny
 thing. Vibe-coding is allowed. Vibe-project-management is not.
-

@@ -15,6 +15,13 @@ The server is an out-of-band control plane. Guest networking is evidence under
 test and MUST NOT be required for discovery, observation, guest command
 execution, debugger access, or VM control.
 
+The primary workflow is cross-layer repair. Given a reproducible guest symptom
+such as a userland command failing an ioctl, an investigation SHOULD preserve
+competing ownership hypotheses across guest userland, the illumos kernel, the
+guest device driver, QEMU's sun4v/device implementation, and lab wiring. Tools
+MUST retain enough layer provenance to rerun the same discriminating test after
+a patch and compare the evidence rather than merely compare impressions.
+
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** are
 to be interpreted as normative requirements.
 
@@ -48,7 +55,7 @@ The MCP server recognizes these layers:
 | Layer | Identifier | Examples |
 |---|---|---|
 | Laboratory | `lab` | run discovery, intent, capabilities |
-| Guest | `guest` | Solaris shell, guest console, services |
+| Guest | `guest` | Solaris shell, guest console, services, DTrace providers |
 | Emulator | `emulator` | QEMU HMP/QMP, virtual devices, vCPU state |
 | Debugger | `debugger` | GDB registers, memory, instructions, symbols |
 | Host | `host` | QEMU process, scheduler, eBPF, perf, host I/O |
@@ -463,10 +470,13 @@ evidence ID. `supported` is not equivalent to proved.
 5. Outputs MUST redact configured secret patterns and MUST never include the
    process environment wholesale.
 6. The server MUST NOT expose a generic root host shell in 0.1.
-7. Raw expert tools MAY be specified later only with exact-target, timeout,
+7. Guest DTrace and host eBPF/perf evidence MUST retain distinct layer
+   provenance even when they describe the same event across the virtualization
+   boundary.
+8. Raw expert tools MAY be specified later only with exact-target, timeout,
    output-bound, mutation, and cleanup contracts.
-8. The QEMU monitor MUST remain bound to a Unix socket or loopback interface.
-9. A GDB TCP listener MUST bind to loopback unless the operator explicitly
+9. The QEMU monitor MUST remain bound to a Unix socket or loopback interface.
+10. A GDB TCP listener MUST bind to loopback unless the operator explicitly
    configures another protected transport.
 
 ## 11. Persistence and concurrency
@@ -566,4 +576,3 @@ Version 0.1 is done when:
   planned capabilities; and
 - the implementation is committed and published without secrets, private
   captures, host-specific paths, or generated VM artifacts.
-
