@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import re
 import tomllib
 from typing import Any, Mapping
 
@@ -15,6 +16,9 @@ from .errors import OldSunError, invalid_config
 class RunRoot:
     path: Path
     manifest: str = "run.manifest"
+    console_log: str = "console.log"
+    monitor_kind: str = "hmp"
+    monitor_socket: str = "monitor.sock"
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,15 @@ class PathsConfig:
 
 
 @dataclass(frozen=True)
+class DebuggerProfile:
+    architecture: str = "sparc:v9"
+    transport: str = "tcp"
+    endpoint: str = "127.0.0.1:1234"
+    stub: str = "hmp"
+    timeout_seconds: float = 15.0
+
+
+@dataclass(frozen=True)
 class Config:
     configured: bool = False
     source: Path | None = None
@@ -50,6 +63,7 @@ class Config:
     paths: PathsConfig = field(default_factory=PathsConfig)
     guest_adapters: Mapping[str, GuestAdapter] = field(default_factory=dict)
     trace_recipes: Mapping[str, TraceRecipe] = field(default_factory=dict)
+    debugger_profiles: Mapping[str, DebuggerProfile] = field(default_factory=dict)
     ledger_dir: Path | None = None
 
 
@@ -62,6 +76,7 @@ TOP_LEVEL_KEYS = {
     "paths",
     "guest_adapters",
     "trace_recipes",
+    "debugger_profiles",
     "ledger_dir",
 }
 
@@ -81,6 +96,15 @@ def _positive_number(value: Any, name: str) -> float:
 def _path_from(base: Path, value: str) -> Path:
     path = Path(value).expanduser()
     return (base / path).resolve() if not path.is_absolute() else path.resolve()
+
+
+def _safe_relative(value: Any, name: str) -> str:
+    if not isinstance(value, str):
+        raise invalid_config(f"{name} must be a string")
+    path = Path(value)
+    if path.is_absolute() or not value or ".." in path.parts:
+        raise invalid_config(f"{name} must be a safe relative path")
+    return value
 
 
 def _find_config(env: Mapping[str, str], cwd: Path, home: Path) -> tuple[Path | None, bool]:
@@ -130,10 +154,25 @@ def load_config(
     for index, item in enumerate(raw.get("run_roots", [])):
         if not isinstance(item, dict):
             raise invalid_config(f"run_roots[{index}] must be a table")
-        _unknown_keys(item, {"path", "manifest"}, f"run_roots[{index}]")
+        _unknown_keys(
+            item,
+            {"path", "manifest", "console_log", "monitor_kind", "monitor_socket"},
+            f"run_roots[{index}]",
+        )
         if not isinstance(item.get("path"), str):
             raise invalid_config(f"run_roots[{index}].path must be a string")
-        run_roots.append(RunRoot(_path_from(base, item["path"]), item.get("manifest", "run.manifest")))
+        monitor_kind = item.get("monitor_kind", "hmp")
+        if monitor_kind not in {"hmp", "qmp"}:
+            raise invalid_config(f"run_roots[{index}].monitor_kind must be hmp or qmp")
+        run_roots.append(
+            RunRoot(
+                _path_from(base, item["path"]),
+                _safe_relative(item.get("manifest", "run.manifest"), f"run_roots[{index}].manifest"),
+                _safe_relative(item.get("console_log", "console.log"), f"run_roots[{index}].console_log"),
+                monitor_kind,
+                _safe_relative(item.get("monitor_socket", "monitor.sock"), f"run_roots[{index}].monitor_socket"),
+            )
+        )
 
     paths_raw = raw.get("paths", {})
     if not isinstance(paths_raw, dict):
@@ -168,6 +207,45 @@ def load_config(
         maximum = int(_positive_number(item.get("max_duration_seconds"), f"trace_recipes.{name}.max_duration_seconds"))
         recipes[name] = TraceRecipe(argv, maximum, bool(item.get("requires_privilege", False)))
 
+    debugger_profiles: dict[str, DebuggerProfile] = {}
+    for name, item in raw.get("debugger_profiles", {}).items():
+        if not isinstance(item, dict):
+            raise invalid_config(f"debugger_profiles.{name} must be a table")
+        _unknown_keys(
+            item,
+            {"architecture", "transport", "endpoint", "stub", "timeout_seconds"},
+            f"debugger_profiles.{name}",
+        )
+        architecture = item.get("architecture", "sparc:v9")
+        if architecture not in {"sparc", "sparc:v9"}:
+            raise invalid_config(f"debugger_profiles.{name}.architecture must be sparc or sparc:v9")
+        transport = item.get("transport", "tcp")
+        if transport not in {"tcp", "unix"}:
+            raise invalid_config(f"debugger_profiles.{name}.transport must be tcp or unix")
+        endpoint = item.get("endpoint", "127.0.0.1:1234" if transport == "tcp" else "private/gdb.sock")
+        if transport == "tcp":
+            if not isinstance(endpoint, str) or not re.fullmatch(r"127\.0\.0\.1:[1-9][0-9]{0,4}", endpoint):
+                raise invalid_config(f"debugger_profiles.{name}.endpoint must be an IPv4 loopback host and port")
+            if int(endpoint.rsplit(":", 1)[1]) > 65535:
+                raise invalid_config(f"debugger_profiles.{name}.endpoint port is invalid")
+        else:
+            endpoint = _safe_relative(endpoint, f"debugger_profiles.{name}.endpoint")
+        stub = item.get("stub", "hmp")
+        if stub not in {"hmp", "existing"}:
+            raise invalid_config(f"debugger_profiles.{name}.stub must be hmp or existing")
+        if stub == "hmp" and transport != "tcp":
+            raise invalid_config(f"debugger_profiles.{name}.stub hmp requires tcp transport")
+        debugger_profiles[name] = DebuggerProfile(
+            architecture=architecture,
+            transport=transport,
+            endpoint=endpoint,
+            stub=stub,
+            timeout_seconds=_positive_number(
+                item.get("timeout_seconds", 15),
+                f"debugger_profiles.{name}.timeout_seconds",
+            ),
+        )
+
     max_output = int(_positive_number(raw.get("max_output_bytes", 262_144), "max_output_bytes"))
     timeout = _positive_number(raw.get("default_timeout_seconds", 30), "default_timeout_seconds")
     ledger = raw.get("ledger_dir")
@@ -182,6 +260,6 @@ def load_config(
         paths=paths,
         guest_adapters=adapters,
         trace_recipes=recipes,
+        debugger_profiles=debugger_profiles,
         ledger_dir=_path_from(base, ledger) if ledger else None,
     )
-

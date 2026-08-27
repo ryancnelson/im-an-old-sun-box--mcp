@@ -71,7 +71,7 @@ Codex client
 I'm an Old Sun Box MCP
     +-- run/manifests/logs
     +-- guest Unix-socket command adapter
-    +-- QEMU HMP Unix socket
+    +-- QEMU HMP or QMP Unix socket
     +-- GDB remote stub
     +-- host process/eBPF/perf tools
 ```
@@ -337,8 +337,8 @@ Requirements:
 
 **Mutation:** `observe`  
 **Input:** `run`  
-**Output data:** PID identity, process existence, monitor availability, and HMP
-`info status` result.
+**Output data:** PID identity, process existence, monitor kind and availability,
+and an HMP `info status` or QMP `query-status` result.
 
 ### 8.7 `qemu.hmp_query`
 
@@ -527,8 +527,8 @@ The automated suite MUST prove:
 3. Secret-key redaction in manifests.
 4. Evidence envelope shape, UTC timestamps, stable errors, and explicit
    truncation warnings.
-5. HMP query/control classification and socket timeout behavior using a fake
-   Unix socket.
+5. HMP query/control classification plus HMP and QMP socket behavior using fake
+   Unix sockets.
 6. Guest adapter argv integrity, nonzero guest exit handling, transport error,
    and timeout behavior without `shell=True`.
 7. Exact PID verification and two-sample host deltas using fixtures or a
@@ -556,9 +556,29 @@ The first implementation following this SPEC MUST deliver:
 - a working stdio MCP server, examples, and automated tests.
 
 Live eBPF recipes, live SPARC GDB profiles, destructive disk operations, VM
-lifecycle, QMP, and a cross-host relay MAY be added after the core is proven.
-Their interfaces are reserved by this SPEC but require host-specific validation
-before being claimed as working.
+lifecycle, general QMP tools, and a cross-host relay MAY be added after the core
+is proven. Their interfaces are reserved by this SPEC but require host-specific
+validation before being claimed as working. `qemu.status` MAY use the typed QMP
+`query-status` command when the run profile selects QMP.
+
+### 15.1 Wedge rollover direction
+
+A future lifecycle workflow SHOULD treat a wedged VM as an evidence source,
+not as the only machine available for continued work. Its transaction is:
+
+1. identify and deliberately freeze the exact run;
+2. capture and hash the configured run inputs, console history, emulator state,
+   guest memory or crash dump where supported, and tool provenance;
+3. verify that the immutable capture is durable and readable;
+4. enqueue that capture for named offline analyzers and interactive debugging;
+5. launch a replacement from explicitly selected, known inputs; and
+6. prove the replacement's run identity and boot progress.
+
+The implementation MUST NOT terminate or overwrite the wedged run before step
+3 succeeds. Capture success and replacement success are separate facts. A
+failure in either phase MUST preserve enough state to retry safely. Lifecycle
+tools require a reason, exact run selectors, idempotency keys, and an operator-
+configured launch profile; they MUST NOT guess which disk image to reuse.
 
 ## 16. Definition of done
 

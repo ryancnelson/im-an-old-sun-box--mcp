@@ -17,17 +17,21 @@ Only one entry may be `active` for a given branch. Never delete completed or
 declined IDs; move them to History so old commits and discussions still make
 sense.
 
-## Ready
+## Active
 
 ### SUN-002 — Validate a live SPARC GDB capture profile
 
-- **Status:** ready
+- **Status:** active
+- **Owner:** Ryan + Codex
+- **Branch:** `codex/sun-002-live-sparc-gdb`
 - **SPEC:** Sections 8.12 and 15
 - **Depends on:** SUN-001
 - **Why:** Fake-backed cleanup proves orchestration, but the actual toolchain and
   target profile must be validated on the VM host.
 - **Acceptance:** A documented non-destructive live capture records registers
   and nearby instructions, proves detach/resume, and leaves QEMU running.
+
+## Ready
 
 ### SUN-003 — Add the first live host trace recipe
 
@@ -97,6 +101,33 @@ sense.
 - **Promotion gate:** Confirm available providers/privileges in the guest,
   define duration/output/cleanup contracts, and propose a named-recipe schema
   that cannot become an arbitrary privileged shell.
+
+### SUN-009 — Content-addressed captures and analyzers
+
+- **Status:** idea
+- **Inspiration:** Joyent/Triton `manta-thoth`
+- **Why:** Live observations should become durable subjects that can be
+  re-examined without stopping the guest again. A successful one-off diagnosis
+  should be promotable into a named analyzer and applied to later captures.
+- **Question:** What is the smallest immutable capture bundle that preserves
+  run identity, tool versions, raw evidence, extracted metadata, and lineage?
+- **Promotion gate:** Define capture hashing, canonical storage, analyzer input
+  and output contracts, provenance rules, and a single-capture-to-many-captures
+  validation workflow.
+
+### SUN-010 — Wedge, dump, hand off, replace
+
+- **Status:** idea
+- **SPEC:** Section 15.1
+- **Depends on:** SUN-009 plus a validated VM lifecycle profile
+- **Why:** A wedged VM should become a durable debugging case while a fresh VM
+  starts booting. Offline diagnosis must not keep the lab's forward progress
+  hostage.
+- **Question:** Which QEMU-level dump captures enough Niagara state to resume
+  useful debugger analysis, and which immutable inputs define a safe replacement?
+- **Promotion gate:** Prove the dump format and offline debugger path; define
+  the freeze, seal, verify, enqueue, launch, and rollback state machine; and
+  test every interruption point without destroying the only recoverable run.
 
 ## History
 

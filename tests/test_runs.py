@@ -113,3 +113,24 @@ def test_describe_redacts_secret_manifest_keys(tmp_path: Path) -> None:
     assert description["manifest"]["api_token"] == "[REDACTED]"
     assert description["manifest"]["nested"]["password"] == "[REDACTED]"
     assert description["pid_verification"]["identity_proved"] is True
+
+
+def test_run_root_can_name_existing_lab_manifest_and_console(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    run = root / "niagara"
+    run.mkdir(parents=True)
+    (run / "manifest.env").write_text("STATUS=PASS\n", encoding="utf-8")
+    (run / "replay.log").write_text("boot output", encoding="utf-8")
+    config = Config(
+        configured=True,
+        run_roots=(RunRoot(root, manifest="manifest.env", console_log="replay.log"),),
+    )
+    registry = RunRegistry(config)
+
+    resolved = registry.resolve("niagara")
+    description = registry.describe("niagara")
+
+    assert registry.console_log(resolved) == run / "replay.log"
+    assert description["manifest"]["STATUS"] == "PASS"
+    assert description["capabilities"]["console_log"] is True
+    assert description["artifacts"]["replay.log"]["available"] is True

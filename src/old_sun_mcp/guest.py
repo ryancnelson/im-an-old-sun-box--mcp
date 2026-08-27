@@ -15,16 +15,19 @@ from .envelope import truncate_text
 from .errors import OldSunError
 
 
-def console_tail(run: Path, max_bytes: int) -> dict[str, Any]:
-    path = run / "console.log"
+def console_tail(path: Path, max_bytes: int) -> dict[str, Any]:
+    # Keep the library-level 0.1 API compatible while allowing the service to
+    # pass a configured log path.
+    if path.is_dir():
+        path = path / "console.log"
     try:
         size = path.stat().st_size
         with path.open("rb") as stream:
             stream.seek(max(0, size - max_bytes))
             data = stream.read(max_bytes)
     except OSError as exc:
-        raise OldSunError("SOURCE_MISSING", "Console log is unavailable", {"ref": "console.log"}) from exc
-    return {"text": data.decode("utf-8", errors="replace"), "returned_bytes": len(data), "original_bytes": size}
+        raise OldSunError("SOURCE_MISSING", "Console log is unavailable", {"ref": path.name}) from exc
+    return {"text": data.decode("utf-8", errors="replace"), "returned_bytes": len(data), "original_bytes": size, "ref": path.name}
 
 
 def _argv_guest(run: Path, adapter: GuestAdapter, command: str, timeout: float, max_bytes: int) -> dict[str, Any]:
@@ -90,4 +93,3 @@ def execute_guest(run: Path, adapter: GuestAdapter, command: str, timeout: float
     if adapter.kind == "fresh-unix-shell":
         return _fresh_shell(run, adapter, command, timeout, max_bytes)
     raise OldSunError("ADAPTER_UNAVAILABLE", f"Unsupported guest adapter: {adapter.kind}")
-

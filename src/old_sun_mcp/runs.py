@@ -103,6 +103,12 @@ class RunRegistry:
             raise OldSunError("RUN_OUTSIDE_ROOT", "Resolved run is outside configured roots")
         return root
 
+    def console_log(self, run: Path) -> Path:
+        return run / self._root_for_run(run.resolve()).console_log
+
+    def run_root(self, run: Path) -> RunRoot:
+        return self._root_for_run(run.resolve())
+
     @staticmethod
     def _parse_pid(run: Path) -> int:
         path = run / "qemu.pid"
@@ -172,13 +178,14 @@ class RunRegistry:
                 if not include_stopped and not live:
                     continue
                 manifest = self._read_manifest(canonical)
+                artifact_names = tuple(dict.fromkeys((*ARTIFACT_NAMES, root.manifest, root.console_log, root.monitor_socket)))
                 found.append(
                     {
                         "name": self._name(canonical),
                         "intent": manifest.get("intent") if isinstance(manifest, dict) else None,
                         "live": live,
                         "pid_verification": pid_status,
-                        "artifacts": {name: self._artifact(canonical / name) for name in ARTIFACT_NAMES},
+                        "artifacts": {name: self._artifact(canonical / name) for name in artifact_names},
                     }
                 )
         return sorted(found, key=lambda item: item["name"])
@@ -214,6 +221,8 @@ class RunRegistry:
 
     def describe(self, selector: str | None) -> dict[str, Any]:
         run = self.resolve(selector)
+        root = self._root_for_run(run)
+        artifact_names = tuple(dict.fromkeys((*ARTIFACT_NAMES, root.manifest, root.console_log, root.monitor_socket)))
         try:
             pid = self.verify_pid(run)
         except OldSunError as exc:
@@ -224,9 +233,12 @@ class RunRegistry:
             "manifest": self._redact(self._read_manifest(run)),
             "pid_verification": pid,
             "capabilities": {
-                "hmp": (run / "monitor.sock").exists(),
-                "console_log": (run / "console.log").is_file(),
+                "hmp": root.monitor_kind == "hmp" and (run / root.monitor_socket).exists(),
+                "qmp": root.monitor_kind == "qmp" and (run / root.monitor_socket).exists(),
+                "monitor_kind": root.monitor_kind,
+                "monitor_socket": root.monitor_socket,
+                "console_log": (run / root.console_log).is_file(),
                 "console_socket": (run / "console.sock").exists(),
             },
-            "artifacts": {name: self._artifact(run / name) for name in ARTIFACT_NAMES},
+            "artifacts": {name: self._artifact(run / name) for name in artifact_names},
         }

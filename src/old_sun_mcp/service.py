@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import Config
-from .debugger import capture as debugger_capture
+from .debugger import HmpMonitor, QmpMonitor, capture as debugger_capture, run_gdb
 from .envelope import failure, success
 from .errors import OldSunError
 from .guest import console_tail, execute_guest
 from .hmp import classify_control, hmp_request, validate_query
 from .host import process_sample, run_trace, trace_capabilities
 from .ledger import Ledger
+from .qmp import qmp_request
 from .runs import RunRegistry
 
 
@@ -43,7 +44,10 @@ class OldSunService:
         return self._call(layer="lab", operation="lab.classify", run=run, source={"kind": "configured_adapter", "ref": "paths.classifier"}, mutation="observe", action=lambda: (_ for _ in ()).throw(OldSunError("ADAPTER_UNAVAILABLE", "Classifier invocation needs a validated project profile")))
 
     def guest_console_tail(self, run: str, max_bytes: int | None = None) -> dict[str, Any]:
-        return self._call(layer="guest", operation="guest.console_tail", run=run, source={"kind": "file", "ref": "console.log"}, mutation="observe", action=lambda: console_tail(self.runs.resolve(run), min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes)))
+        def action() -> Any:
+            resolved = self.runs.resolve(run)
+            return console_tail(self.runs.console_log(resolved), min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes))
+        return self._call(layer="guest", operation="guest.console_tail", run=run, source={"kind": "file", "ref": "configured console log"}, mutation="observe", action=action)
 
     def guest_exec(self, run: str, command: str, *, reason: str, adapter: str | None = None, timeout_seconds: float | None = None) -> dict[str, Any]:
         def action() -> Any:
@@ -59,23 +63,53 @@ class OldSunService:
 
     def qemu_status(self, run: str) -> dict[str, Any]:
         def action() -> Any:
-            resolved = self.runs.resolve(run); identity = self.runs.verify_pid(resolved)
-            return {"pid_identity": identity, "monitor": hmp_request(resolved / "monitor.sock", "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)}
-        return self._call(layer="emulator", operation="qemu.status", run=run, source={"kind": "unix_socket", "ref": "monitor.sock"}, mutation="observe", action=action)
+            resolved = self.runs.resolve(run)
+            identity = self.runs.verify_pid(resolved)
+            root = self.runs.run_root(resolved)
+            monitor_path = resolved / root.monitor_socket
+            if root.monitor_kind == "qmp":
+                monitor = {
+                    "kind": "qmp",
+                    "response": qmp_request(
+                        monitor_path,
+                        "query-status",
+                        self.config.default_timeout_seconds,
+                        self.config.max_output_bytes,
+                    ),
+                }
+            else:
+                monitor = {
+                    "kind": "hmp",
+                    **hmp_request(
+                        monitor_path,
+                        "info status",
+                        self.config.default_timeout_seconds,
+                        self.config.max_output_bytes,
+                    ),
+                }
+            return {"pid_identity": identity, "monitor": monitor}
+        return self._call(layer="emulator", operation="qemu.status", run=run, source={"kind": "unix_socket", "ref": "configured monitor"}, mutation="observe", action=action)
 
     def qemu_hmp_query(self, run: str, command: str, timeout_seconds: float | None = None) -> dict[str, Any]:
         def action() -> Any:
             resolved = self.runs.resolve(run); self.runs.verify_pid(resolved); validate_query(command)
-            return hmp_request(resolved / "monitor.sock", command, timeout_seconds or self.config.default_timeout_seconds, self.config.max_output_bytes)
+            root = self.runs.run_root(resolved)
+            if root.monitor_kind != "hmp":
+                raise OldSunError("ADAPTER_UNAVAILABLE", "This run uses QMP; HMP text queries are unavailable")
+            return hmp_request(resolved / root.monitor_socket, command, timeout_seconds or self.config.default_timeout_seconds, self.config.max_output_bytes)
         return self._call(layer="emulator", operation="qemu.hmp_query", run=run, source={"kind": "unix_socket", "ref": "monitor.sock"}, mutation="observe", action=action)
 
     def qemu_hmp_control(self, run: str, command: str, *, reason: str, timeout_seconds: float | None = None) -> dict[str, Any]:
         mutation = "reversible" if command.strip().split(maxsplit=1)[0] in {"stop", "cont"} else "disruptive"
         def action() -> Any:
             self._reason(reason); classified = classify_control(command); resolved = self.runs.resolve(run); self.runs.verify_pid(resolved)
-            before = hmp_request(resolved / "monitor.sock", "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
-            response = hmp_request(resolved / "monitor.sock", command, timeout_seconds or self.config.default_timeout_seconds, self.config.max_output_bytes)
-            after = hmp_request(resolved / "monitor.sock", "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
+            root = self.runs.run_root(resolved)
+            if root.monitor_kind != "hmp":
+                raise OldSunError("ADAPTER_UNAVAILABLE", "This run uses QMP; HMP text controls are unavailable")
+            monitor_path = resolved / root.monitor_socket
+            before = hmp_request(monitor_path, "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
+            response = hmp_request(monitor_path, command, timeout_seconds or self.config.default_timeout_seconds, self.config.max_output_bytes)
+            after = hmp_request(monitor_path, "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
             return {"pre_status": before, "response": response, "post_status": after, "classified_effect": classified}
         return self._call(layer="emulator", operation="qemu.hmp_control", run=run, source={"kind": "unix_socket", "ref": "monitor.sock"}, mutation=mutation, action=action)
 
@@ -95,8 +129,38 @@ class OldSunService:
 
     def debugger_capture(self, run: str, *, reason: str, profile: str | None = None) -> dict[str, Any]:
         def action() -> Any:
-            self._reason(reason); self.runs.verify_pid(self.runs.resolve(run))
-            raise OldSunError("ADAPTER_UNAVAILABLE", "No live debugger profile is validated; cleanup orchestration is available as a library interface")
+            self._reason(reason)
+            resolved = self.runs.resolve(run)
+            self.runs.verify_pid(resolved)
+            if self.config.paths.gdb is None:
+                raise OldSunError("ADAPTER_UNAVAILABLE", "paths.gdb is not configured")
+            name = profile or ("default" if "default" in self.config.debugger_profiles else None)
+            if name is None and len(self.config.debugger_profiles) == 1:
+                name = next(iter(self.config.debugger_profiles))
+            selected = self.config.debugger_profiles.get(name or "")
+            if selected is None:
+                raise OldSunError("ADAPTER_UNAVAILABLE", f"Unknown debugger profile: {name or 'default'}")
+            root = self.runs.run_root(resolved)
+            monitor_path = resolved / root.monitor_socket
+            monitor = (
+                QmpMonitor(monitor_path, self.config.default_timeout_seconds, self.config.max_output_bytes)
+                if root.monitor_kind == "qmp"
+                else HmpMonitor(monitor_path, self.config.default_timeout_seconds, self.config.max_output_bytes)
+            )
+            target = str(resolved / selected.endpoint) if selected.transport == "unix" else selected.endpoint
+            if selected.stub == "hmp" and root.monitor_kind != "hmp":
+                raise OldSunError("ADAPTER_UNAVAILABLE", "The debugger profile requires HMP stub setup, but this run uses QMP")
+            setup_stub = None
+            if selected.stub == "existing":
+                setup_stub = lambda: {"mode": "preconfigured", "transport": selected.transport, "endpoint": selected.endpoint}
+            result = debugger_capture(
+                monitor,
+                lambda: run_gdb(self.config.paths.gdb, selected, self.config.max_output_bytes, target=target),
+                endpoint=f"tcp:{selected.endpoint}",
+                setup_stub=setup_stub,
+            )
+            result["profile"] = name
+            return result
         return self._call(layer="debugger", operation="debugger.capture", run=run, source={"kind": "debugger_profile", "ref": profile or "default"}, mutation="disruptive", action=action)
 
     def _ledger(self) -> Ledger:

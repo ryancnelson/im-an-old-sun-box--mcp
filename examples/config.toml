@@ -7,10 +7,20 @@ ledger_dir = ".old-sun-evidence"
 [[run_roots]]
 path = "/srv/old-sun-lab/runs"
 manifest = "run.manifest"
+console_log = "console.log"
+monitor_kind = "hmp"
+monitor_socket = "monitor.sock"
 
 [paths]
 classifier = "/opt/old-sun-lab/bin/classify-vm"
 gdb = "/opt/cross/bin/sparc64-unknown-elf-gdb"
+
+[debugger_profiles.default]
+architecture = "sparc:v9"
+transport = "tcp"
+endpoint = "127.0.0.1:1234"
+stub = "hmp"
+timeout_seconds = 15
 
 [guest_adapters.maintenance]
 kind = "argv"

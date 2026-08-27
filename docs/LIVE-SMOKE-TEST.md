@@ -19,7 +19,8 @@ not part of the automated test suite.
 3. Call `lab.describe_run` and verify PID identity is proved without exposing
    manifest secrets.
 4. Call `guest.console_tail` and record one sourced guest observation.
-5. Call `qemu.status` and confirm HMP reports the expected pre-state.
+5. Call `qemu.status` and confirm the configured HMP or QMP monitor reports the
+   expected pre-state.
 6. Call `host.process_sample` for one second and treat host activity only as
    host-layer evidence.
 7. Start two competing hypotheses, record the guest/QEMU/host observations,
@@ -29,4 +30,3 @@ not part of the automated test suite.
 
 Do not call guest execution, HMP control, debugger capture, or host trace as
 part of this smoke test.
-

@@ -29,6 +29,15 @@ ledger_dir = "ledger"
 [[run_roots]]
 path = "{run_root}"
 manifest = "run.manifest"
+console_log = "replay.log"
+
+[paths]
+gdb = "/usr/bin/gdb-multiarch"
+
+[debugger_profiles.default]
+architecture = "sparc:v9"
+endpoint = "127.0.0.1:1234"
+timeout_seconds = 12
 
 [guest_adapters.maintenance]
 kind = "argv"
@@ -54,6 +63,9 @@ requires_privilege = true
     assert config.source == config_path.resolve()
     assert config.run_roots[0].path == run_root.resolve()
     assert config.default_run == "demo"
+    assert config.run_roots[0].console_log == "replay.log"
+    assert config.debugger_profiles["default"].architecture == "sparc:v9"
+    assert config.debugger_profiles["default"].timeout_seconds == 12
     assert config.guest_adapters["maintenance"].argv[1] == "{socket}"
     assert config.trace_recipes["tcg"].max_duration_seconds == 9
     assert config.ledger_dir == config_path.parent / "ledger"
@@ -95,3 +107,50 @@ def test_missing_explicit_config_is_typed_error(tmp_path: Path) -> None:
         )
 
     assert raised.value.code == "CONFIG_NOT_FOUND"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        'architecture = "amd64"\n',
+        'endpoint = "0.0.0.0:1234"\n',
+        'endpoint = "127.0.0.1:70000"\n',
+    ],
+)
+def test_debugger_profile_rejects_non_sparc_or_non_loopback_values(tmp_path: Path, profile: str) -> None:
+    path = tmp_path / "bad.toml"
+    path.write_text(f"version = 1\n[debugger_profiles.default]\n{profile}", encoding="utf-8")
+
+    with pytest.raises(OldSunError) as raised:
+        load_config(env={"OLD_SUN_MCP_CONFIG": str(path)}, cwd=tmp_path, home=tmp_path)
+
+    assert raised.value.code == "CONFIG_INVALID"
+
+
+def test_qmp_run_root_and_unix_debugger_profile_parse(tmp_path: Path) -> None:
+    root = tmp_path / "runs"; root.mkdir()
+    path = tmp_path / "qmp.toml"
+    path.write_text(
+        f'''version = 1
+[[run_roots]]
+path = "{root}"
+manifest = "qemu.argv"
+console_log = "logs/console.log"
+monitor_kind = "qmp"
+monitor_socket = "private/qmp.sock"
+
+[debugger_profiles.default]
+architecture = "sparc:v9"
+transport = "unix"
+endpoint = "private/gdb.sock"
+stub = "existing"
+''',
+        encoding="utf-8",
+    )
+
+    config = load_config(env={"OLD_SUN_MCP_CONFIG": str(path)}, cwd=tmp_path, home=tmp_path)
+
+    assert config.run_roots[0].monitor_kind == "qmp"
+    assert config.run_roots[0].monitor_socket == "private/qmp.sock"
+    assert config.debugger_profiles["default"].transport == "unix"
+    assert config.debugger_profiles["default"].stub == "existing"

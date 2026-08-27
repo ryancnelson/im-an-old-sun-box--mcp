@@ -30,8 +30,11 @@ host capability outside the MCP process, then confirm it with
 `host.trace_capabilities`.
 
 Guest commands use only configured argv or fresh-shell Unix-socket adapters.
-They never silently fall back to SSH. HMP remains on a Unix socket. A live GDB
-profile must use loopback or an equivalently protected transport.
+They never silently fall back to SSH. HMP and QMP remain on Unix sockets. A live
+GDB profile is restricted to a loopback TCP endpoint or a safe run-relative
+Unix socket and fixed SPARC evidence commands.
+Use `gdb-multiarch` or another GDB build that accepts the configured SPARC
+architecture; the ordinary Ubuntu GDB build may not include it.
 
 ## Safe failure behavior
 
@@ -40,8 +43,13 @@ socket waits. Output is byte-bounded and truncation is disclosed. State-changing
 operations require a reason. Debugger and trace operations never claim cleanup
 unless it was verified.
 
-The current 0.1 core includes debugger cleanup orchestration tested with fakes,
-but deliberately returns `ADAPTER_UNAVAILABLE` for live debugger capture until
-a SPARC GDB profile is validated on the VM host. The semantic classifier does
-the same until its project-specific argv contract is configured and tested.
+Debugger capture starts the stub through the exact run's monitor, executes a
+bounded batch, closes the debugger process, and restores the recorded QEMU
+state. It returns `CLEANUP_UNPROVED` if the state check fails. The semantic
+classifier still returns `ADAPTER_UNAVAILABLE` until its project-specific argv
+contract is configured and tested.
 
+Newer QEMU launchers can configure `monitor_kind = "qmp"` and a run-relative
+`monitor_socket`. The current QMP surface is deliberately small: typed
+`query-status`, plus `stop` and `cont` used only for debugger cleanup. The MCP
+does not expose arbitrary QMP execution.
