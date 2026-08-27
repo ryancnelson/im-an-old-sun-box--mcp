@@ -105,3 +105,16 @@ evidence.
 
 The box is old. The debugging rig is not.
 
+## How vibe-coded is this?
+
+Quite!
+
+There are no illusions here that Ryan emerged fully formed from the forehead of
+Bill Joy, already fluent in sun4v internals. This project is being built through
+curiosity, experiments, AI collaboration, old documentation, new evidence, and
+the occasional extremely productive bad idea.
+
+That makes discipline more important, not less. The SPEC says what the system
+must do. Tests prove what it actually does. The evidence ledger records what we
+actually observed. The contributor workflow keeps a promising hack from
+quietly becoming an archaeological layer.
