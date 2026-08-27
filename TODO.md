@@ -17,20 +17,6 @@ Only one entry may be `active` for a given branch. Never delete completed or
 declined IDs; move them to History so old commits and discussions still make
 sense.
 
-## Active
-
-### SUN-002 — Validate a live SPARC GDB capture profile
-
-- **Status:** active
-- **Owner:** Ryan + Codex
-- **Branch:** `codex/sun-002-live-sparc-gdb`
-- **SPEC:** Sections 8.12 and 15
-- **Depends on:** SUN-001
-- **Why:** Fake-backed cleanup proves orchestration, but the actual toolchain and
-  target profile must be validated on the VM host.
-- **Acceptance:** A documented non-destructive live capture records registers
-  and nearby instructions, proves detach/resume, and leaves QEMU running.
-
 ## Ready
 
 ### SUN-003 — Add the first live host trace recipe
@@ -130,6 +116,17 @@ sense.
   test every interruption point without destroying the only recoverable run.
 
 ## History
+
+### SUN-002 — Validate a live SPARC GDB capture profile
+
+- **Status:** done
+- **Completed:** 2026-08-27
+- **Branch:** `codex/sun-002-live-sparc-gdb`
+- **Validation:** `docs/live-validation/2026-08-27-sparc-gdb.md`
+- **Outcome:** The installed MCP proved exact QEMU identity, used typed QMP
+  status and cleanup over a private Unix socket, captured SPARC v9 registers
+  and nearby instructions through a private GDB socket, detached, and proved
+  the guest returned to `running`.
 
 ### SUN-001 — Implement the 0.1 MCP core
 

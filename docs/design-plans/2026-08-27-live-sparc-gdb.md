@@ -43,3 +43,6 @@ The structured result is deliberately suitable for a later Thoth-style layer:
 immutable, content-addressed captures with metadata enrichment by named
 analyzers. That storage and analyzer lifecycle is tracked separately as
 SUN-009; live debugger validation does not depend on it.
+
+Live validation completed on 2026-08-27. See
+`docs/live-validation/2026-08-27-sparc-gdb.md`.
