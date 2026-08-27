@@ -150,6 +150,11 @@ The box is old. The debugging rig is not.
 
 Quite!
 
+**I'm leaning into the AI-slop writing style, rather than trying to act like
+I'm a poet. Expect em-dashed gems like “*The spirit is captured, but
+nobody—including future Ryan—can quickly tell what the software promises or
+what to do next.*” in big helpings.**
+
 There are no illusions here that Ryan emerged fully formed from the forehead of
 Bill Joy, already fluent in sun4v internals. This project is being built through
 curiosity, experiments, AI collaboration, old documentation, new evidence, and
