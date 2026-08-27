@@ -26,3 +26,7 @@ def test_guest_exec_requires_reason() -> None:
     result = OldSunService(Config()).guest_exec("demo", "date", reason="")
     assert result["error"]["code"] == "INVALID_ARGUMENT"
 
+
+def test_hmp_stop_is_declared_reversible_before_execution() -> None:
+    result = OldSunService(Config()).qemu_hmp_control("demo", "stop", reason="inspect")
+    assert result["mutation"] == "reversible"

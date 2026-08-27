@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -32,3 +33,12 @@ def test_corrupt_trailing_line_is_reported(tmp_path: Path) -> None:
     with (tmp_path / "run.jsonl").open("a") as stream: stream.write("{")
     with pytest.raises(OldSunError) as raised: ledger.read("run")
     assert raised.value.code == "COMMAND_FAILED"
+
+
+def test_concurrent_writers_leave_complete_records(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda number: ledger.record_evidence("run", "inv", "guest", f"claim {number}", "test"), range(40)))
+    events = ledger.read("run")
+    assert len(events) == 40
+    assert len({event["id"] for event in events}) == 40

@@ -34,3 +34,14 @@ def test_guest_timeout_is_typed(tmp_path: Path) -> None:
         execute_guest(tmp_path, adapter, "date", 0.01, 1000)
     assert raised.value.code == "COMMAND_TIMEOUT"
 
+
+def test_nonzero_guest_exit_is_evidence_not_transport_failure(tmp_path: Path) -> None:
+    adapter = GuestAdapter("argv", "guest.sock", (os.sys.executable, "-c", "raise SystemExit(7)", "{command}"))
+    assert execute_guest(tmp_path, adapter, "false", 1, 1000)["exit_status"] == 7
+
+
+def test_fresh_shell_transport_failure_is_typed(tmp_path: Path) -> None:
+    adapter = GuestAdapter("fresh-unix-shell", "missing.sock")
+    with pytest.raises(OldSunError) as raised:
+        execute_guest(tmp_path, adapter, "date", 1, 1000)
+    assert raised.value.code == "SOCKET_CONNECT_FAILED"

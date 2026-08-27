@@ -132,8 +132,14 @@ across the virtualization boundary, now we're cooking.
 
 ## Status
 
-**Specification complete; initial implementation in progress.** The
-control-plane design is being extracted from a working
+**The portable 0.1 core is implemented.** Strict configuration, validated run
+identity, guest/HMP/host adapters, immutable evidence and hypothesis history,
+debugger cleanup orchestration, and the MCP stdio server are covered by a test
+suite that uses no live VM, root, or network. CI runs it on macOS and Linux.
+
+Live SPARC GDB profiles, guest DTrace recipes, host eBPF/perf recipes, and the
+project semantic-classifier argv profile remain explicitly unvalidated rather
+than being advertised as magic. The control-plane design was extracted from a working
 QEMU sun4v laboratory that already has guest channels, persistent storage,
 semantic VM classification, live GDB-stub debugging, and host-side performance
 evidence.

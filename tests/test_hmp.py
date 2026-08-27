@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 from pathlib import Path
 import uuid
 
@@ -9,7 +10,7 @@ from old_sun_mcp.errors import OldSunError
 from old_sun_mcp.hmp import classify_control, hmp_request, validate_query
 
 
-def fake_hmp(path: Path, response: bytes = b"VM status: running\r\n(qemu) ") -> threading.Thread:
+def fake_hmp(path: Path, response: bytes | None = b"VM status: running\r\n(qemu) ") -> threading.Thread:
     ready = threading.Event()
 
     def serve() -> None:
@@ -19,7 +20,10 @@ def fake_hmp(path: Path, response: bytes = b"VM status: running\r\n(qemu) ") -> 
             with connection:
                 connection.sendall(b"QEMU monitor\r\n(qemu) ")
                 connection.recv(4096)
-                connection.sendall(response)
+                if response is None:
+                    time.sleep(0.2)
+                else:
+                    connection.sendall(response)
 
     thread = threading.Thread(target=serve, daemon=True); thread.start(); ready.wait(1)
     return thread
@@ -49,3 +53,14 @@ def test_missing_socket_is_typed(tmp_path: Path) -> None:
     with pytest.raises(OldSunError) as raised:
         hmp_request(tmp_path / "missing.sock", "info status", 0.1, 100)
     assert raised.value.code == "SOCKET_CONNECT_FAILED"
+
+
+def test_monitor_timeout_is_typed() -> None:
+    path = Path("/tmp") / f"old-sun-{uuid.uuid4().hex[:12]}.sock"
+    thread = fake_hmp(path, response=None)
+    try:
+        with pytest.raises(OldSunError) as raised:
+            hmp_request(path, "info status", 0.05, 100)
+        assert raised.value.code == "SOCKET_TIMEOUT"
+    finally:
+        thread.join(1); path.unlink(missing_ok=True)

@@ -70,14 +70,13 @@ class OldSunService:
         return self._call(layer="emulator", operation="qemu.hmp_query", run=run, source={"kind": "unix_socket", "ref": "monitor.sock"}, mutation="observe", action=action)
 
     def qemu_hmp_control(self, run: str, command: str, *, reason: str, timeout_seconds: float | None = None) -> dict[str, Any]:
-        mutation = "disruptive"
+        mutation = "reversible" if command.strip().split(maxsplit=1)[0] in {"stop", "cont"} else "disruptive"
         def action() -> Any:
-            nonlocal mutation
-            self._reason(reason); mutation = classify_control(command); resolved = self.runs.resolve(run); self.runs.verify_pid(resolved)
+            self._reason(reason); classified = classify_control(command); resolved = self.runs.resolve(run); self.runs.verify_pid(resolved)
             before = hmp_request(resolved / "monitor.sock", "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
             response = hmp_request(resolved / "monitor.sock", command, timeout_seconds or self.config.default_timeout_seconds, self.config.max_output_bytes)
             after = hmp_request(resolved / "monitor.sock", "info status", self.config.default_timeout_seconds, self.config.max_output_bytes)
-            return {"pre_status": before, "response": response, "post_status": after, "classified_effect": mutation}
+            return {"pre_status": before, "response": response, "post_status": after, "classified_effect": classified}
         return self._call(layer="emulator", operation="qemu.hmp_control", run=run, source={"kind": "unix_socket", "ref": "monitor.sock"}, mutation=mutation, action=action)
 
     def host_process_sample(self, run: str, sample_seconds: float = 0.25) -> dict[str, Any]:
@@ -104,15 +103,18 @@ class OldSunService:
         if self.config.ledger_dir is None: raise OldSunError("CONFIG_NOT_FOUND", "ledger_dir is not configured")
         return Ledger(self.config.ledger_dir)
 
+    def _ledger_run(self, selector: str) -> str:
+        name = self.runs.describe(selector)["name"]
+        return name.replace("/", "--")
+
     def evidence_record(self, run: str, investigation_id: str, layer: str, claim: str, source: str, tool_result_digest: str | None = None, notes: str | None = None) -> dict[str, Any]:
-        return self._call(layer="artifact", operation="evidence.record", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().record_evidence(run, investigation_id, layer, claim, source, tool_result_digest, notes))
+        return self._call(layer="artifact", operation="evidence.record", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().record_evidence(self._ledger_run(run), investigation_id, layer, claim, source, tool_result_digest, notes))
 
     def evidence_read(self, run: str, investigation_id: str | None = None, after_id: str | None = None, limit: int = 1000) -> dict[str, Any]:
-        return self._call(layer="artifact", operation="evidence.read", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().read(run, investigation_id=investigation_id, after_id=after_id, limit=limit))
+        return self._call(layer="artifact", operation="evidence.read", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().read(self._ledger_run(run), investigation_id=investigation_id, after_id=after_id, limit=limit))
 
     def hypothesis_start(self, run: str, investigation_id: str, statement: str, predictions: list[str], discriminating_tests: list[str]) -> dict[str, Any]:
-        return self._call(layer="artifact", operation="hypothesis.start", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().start_hypothesis(run, investigation_id, statement, predictions, discriminating_tests))
+        return self._call(layer="artifact", operation="hypothesis.start", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().start_hypothesis(self._ledger_run(run), investigation_id, statement, predictions, discriminating_tests))
 
     def hypothesis_update(self, run: str, investigation_id: str, hypothesis_id: str, status: str, evidence_ids: list[str], reason: str) -> dict[str, Any]:
-        return self._call(layer="artifact", operation="hypothesis.update", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().update_hypothesis(run, investigation_id, hypothesis_id, status, evidence_ids, reason))
-
+        return self._call(layer="artifact", operation="hypothesis.update", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().update_hypothesis(self._ledger_run(run), investigation_id, hypothesis_id, status, evidence_ids, reason))

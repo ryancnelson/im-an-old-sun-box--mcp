@@ -19,16 +19,6 @@ sense.
 
 ## Ready
 
-### SUN-001 — Implement the 0.1 MCP core
-
-- **Status:** active
-- **Branch:** `main` (bootstrap exception; subsequent work uses feature branches)
-- **SPEC:** Sections 5–15
-- **Plan:** `docs/plans/2026-08-27-initial-mcp.md`
-- **Why:** Turn the normative contract into a safe, testable stdio MCP server.
-- **Acceptance:** All Section 15 capabilities and Section 14 conformance tests
-  pass without a live VM, root access, or networking.
-
 ### SUN-002 — Validate a live SPARC GDB capture profile
 
 - **Status:** ready
@@ -110,4 +100,12 @@ sense.
 
 ## History
 
-No completed items yet.
+### SUN-001 — Implement the 0.1 MCP core
+
+- **Status:** done
+- **Completed:** 2026-08-27
+- **Commit:** `eeec522` plus final conformance follow-up
+- **Plan:** `docs/plans/2026-08-27-initial-mcp.md`
+- **Outcome:** Portable stdio server, safety adapters, evidence ledger,
+  contributor workflow, documentation, packaging, and fake-backed conformance
+  suite implemented. Live host/guest profiles remain separately tracked.

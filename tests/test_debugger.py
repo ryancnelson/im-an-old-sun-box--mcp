@@ -31,3 +31,13 @@ def test_cleanup_must_be_proved() -> None:
     monitor = Monitor(post="paused")
     with pytest.raises(OldSunError) as raised: capture(monitor, lambda: {})
     assert raised.value.code == "CLEANUP_UNPROVED"
+
+
+@pytest.mark.parametrize("failure", [TimeoutError("timed out"), ValueError("malformed output")])
+def test_timeout_and_malformed_output_still_cleanup(failure) -> None:
+    monitor = Monitor()
+    def fail(): raise failure
+    with pytest.raises(OldSunError) as raised: capture(monitor, fail)
+    assert raised.value.code == "COMMAND_FAILED"
+    assert raised.value.details["cleanup_proved"] is True
+    assert monitor.calls[-1] == "cont"
