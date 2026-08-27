@@ -1,21 +1,17 @@
-# The Temporal Airlock Has a Modem Prompt
+# The temporal airlock has a modem prompt
 
 *August 27, 2026*
 
-The spiritual ancestor of this MCP already exists in Ryan's
-[`qemu-sun4v-illumos`](https://github.com/ryancnelson/qemu-sun4v-illumos)
-repository. It is an old-school dial-up BBS running over a virtual channel
-between a Solaris guest and its modern host.
+I built a dial-up BBS for my emulated Solaris machine. It gives the guest a
+reliable way to ask questions, fetch files, and start a network connection even
+when its normal networking is broken.
 
-This is not a decorative retro interface. It solves the bootstrap problem.
+A fresh Solaris installation may have no Bash, SSH, curl, working DNS, useful
+compiler, or Python. That is especially painful when I am developing the
+emulated network device. The BBS runs over a virtual channel between the guest
+and host, so it does not depend on that device.
 
-A freshly installed old Solaris machine may have no Bash, no SSH, no curl, no
-working DNS, no useful compiler, and—when the emulated network device is the
-thing being developed—no network connection at all. Historically, escaping
-that hole meant carrying tools into the machine through increasingly absurd
-mechanisms until it acquired enough capability to help itself.
-
-The BBS gives the isolated guest one guaranteed something-out-there:
+From Solaris, it looks like this:
 
 ```text
 ATDT18005551212
@@ -26,75 +22,56 @@ isp> GET libiconv sparc solaris 8
 isp> STARTPPP
 ```
 
-Those three commands form a capability ladder.
+## `ASK`
 
-`ASK` exports the knowledge problem. The oracle runs on the modern side and is
-prompted with the guest's real constraints: Solaris 10 on SPARC, real Bourne
-shell, non-GNU tools, old GNU Make, known library locations, and a specific libc
-symbol-version ceiling. The person in the guest can ask a current model why a
-link failed without first constructing enough internet to reach one.
+The oracle runs on the host and knows the guest's actual constraints: Solaris
+10 on SPARC, Bourne shell, non-GNU tools, old GNU Make, known library paths, and
+the image's libc symbol-version ceiling. I can ask why a link failed before the
+guest has enough networking to reach a current model itself.
 
-The implementation also records an important negative result. A measured 135M
-local model ignored instructions to admit uncertainty, invented a nonexistent
-`libniosleep`, fabricated supporting documentation, and fell into a repetition
-loop. At 2400 baud, on a machine where checking the answer is itself expensive,
-a confident liar is worse than no oracle. The tiny-model mode therefore treats
-honest ignorance as a feature, not a personality defect.
+The code includes a mode for small local models, but the minimum useful model
+size is an observed constraint. I tested SmolLM2-135M-Instruct-Q4_K_M. When I
+asked which library provides `nanosleep`, it invented `libniosleep`, fabricated
+a documentation quote, and entered a repetition loop. A person using a 2005
+Solaris image cannot cheaply verify that answer. The small-model prompt tells
+the model to refuse Solaris-specific questions, and the source records why.
 
-`GET` exports the acquisition problem. The host has modern DNS, TLS, HTTP, and
-curl, so it fetches the requested artifact into a guest-visible delivery area.
-But the BBS learned not to confuse transport success with a valid payload. An
-early version cheerfully delivered a 345-byte HTML error page as a compressed
-package because curl returned success. The current path checks HTTP status,
-uses fail-on-error fetching, examines content magic, rejects suspicious tiny or
-HTML responses, and reports size and checksum. This is scar-tissue engineering:
-the code remembers the specific lie it was once told.
+## `GET`
 
-`STARTPPP` exports the networking bootstrap. The line begins as a character
-terminal with Hayes-modem theater. When the guest asks, the host and guest hand
-that same file descriptor to `pppd`, and the BBS line becomes an IP link. The
-caller decides when networking begins. A guest reboot no longer requires a
-human to notice and issue the matching host-side command at exactly the right
-time.
+The host fetches a requested artifact with current DNS, TLS, and HTTP support,
+then places it in a guest-visible delivery directory.
 
-The guest dialer is written in Perl because Solaris 10 already has Perl 5.8.4
-with Unix-domain sockets and does not have Python. It uses one retained receive
-buffer because `CONNECT`, the banner, and the `isp>` prompt can arrive in the
-same read; an earlier implementation discarded already-received bytes between
-waits and then waited forever for text it had thrown away. Again, the interface
-is whimsical. The engineering is not.
+The first implementation delivered a 345-byte HTML error page as a compressed
+package because curl returned success. The current code checks the HTTP status,
+uses curl's fail-on-error mode, examines the downloaded file's magic bytes,
+rejects suspicious HTML or tiny responses, and reports the size and checksum.
+That 345-byte file is now a regression requirement.
 
-## Two faces of one service plane
+## `STARTPPP`
 
-The BBS and this MCP approach the same problem from opposite centuries.
+The connection begins as a character terminal with a Hayes-style dial sequence.
+After the guest sends `STARTPPP`, both sides hand the same file descriptor to
+`pppd`. The BBS session becomes an IP link without a matching command from the
+host operator.
 
-The BBS is the guest-native emergency door. It is line-oriented ASCII, usable
-from inside the old machine with nearly nothing. When the guest network, modern
-toolchain, and elaborate control software are all absent or suspect, `ATDT`,
-`CONNECT 2400`, and a prompt remain understandable.
+The guest dialer is Perl because Solaris 10 already has Perl 5.8.4 with
+Unix-domain socket support. It keeps one receive buffer across protocol waits.
+`CONNECT`, the banner, and the `isp>` prompt can arrive in one read; an earlier
+version discarded bytes between waits and then blocked waiting for text it had
+already received.
 
-The MCP is the 2026 cockpit outside the machine. It provides structured run
-identity, bounded tools, evidence provenance, hypotheses, QEMU monitor access,
-SPARC debugging, guest DTrace, host eBPF/perf, artifact handling, and cleanup
-proof.
+## The MCP connection
 
-The shared-disk channel between them is a temporal airlock. On one side stands
-a Solaris administrator working with the capabilities of an old Sun box. On
-the other side is a modern host with storage, networking, models, debuggers, and
-enough compute to be extravagant. The airlock moves selected knowledge, files,
-requests, and eventually packets between them without pretending the guest's
-own broken network works.
+The BBS is usable from inside Solaris with the base tools already present. The
+MCP runs outside the guest and provides structured access to QEMU, GDB, host
+tracing, run artifacts, and the evidence ledger. Both use the out-of-band
+channel while serving different operators.
 
-These interfaces should eventually share services without sharing failure
-domains. An MCP investigation could place a verified build artifact into the
-BBS delivery area. A BBS distress request could become a sourced evidence event
-or ask the host to examine its channel bridge. A `STARTPPP` transition could
-trigger synchronized before-and-after observations inside Solaris, in QEMU,
-and on the host.
+They can share services later. An MCP operation could place a verified build in
+the BBS delivery directory. A BBS request could create an evidence event or ask
+the host to inspect the channel bridge. `STARTPPP` could trigger synchronized
+captures in Solaris, QEMU, and the host.
 
-But the BBS must remain independently useful. It is the bottom rung of the
-capability ladder, not a novelty skin over the MCP. Sophisticated control planes
-are wonderful right up until their prerequisites are the thing on fire.
-
-That makes the Sunset BBS something better than nostalgia: an unusually good
-reliability interface wearing a wonderfully ridiculous costume.
+The BBS must continue to work without the MCP. Its value comes from the small
+set of assumptions required to reach it. When the guest network is broken, the
+fallback still answers `ATDT`.
