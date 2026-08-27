@@ -13,6 +13,8 @@ Start with the [normative specification](SPEC.md). Work is organized in the
 idea becomes a scoped branch, tested change, and cleanly closed piece of work.
 The [project blog](project-blog/) keeps the chronological, irreverent story
 without turning the normative docs into Friday-night word salad.
+[Codex setup](docs/CODEX-CONFIG.md) covers direct installation on the VM host
+and the SSH stdio path from another machine.
 
 The point is not to give an agent a polite little remote shell and pretend an
 ancient Solaris guest is a normal cloud VM. The point is to let the agent
@@ -88,6 +90,45 @@ The project follows Ryan's Gilfoyle hypothesis method:
 No séance-by-logfile. No declaring victory because the console twitched. No
 turning “I don't know” into a page of confident fan fiction.
 
+## The Thoth inheritance
+
+Ryan spent five years at Joyent, and this project knowingly borrows an
+operational idea from [manta-thoth](https://github.com/TritonDataCenter/manta-thoth).
+Thoth took illumos core and crash dumps, gave each dump a stable identity,
+stored its metadata, and ran named analyzers against it. An engineer could
+debug one dump interactively, turn the useful part of that session into an
+analyzer, and apply the analyzer to later dumps.
+
+Thoth predates OpenAI. Its useful idea is operational: debugging should not
+hold recovery hostage. The corresponding workflow for this lab is:
+
+```text
+wedged VM
+    -> freeze the exact run
+    -> capture and hash its diagnostic state
+    -> verify the capture is durable
+    -> hand the case to offline debugging and named analyzers
+
+known inputs
+    -> start a replacement VM
+    -> prove its identity and boot progress
+```
+
+The sealed case should contain enough material to investigate after the
+original QEMU process is gone: run inputs and hashes, console history, QMP
+state, guest memory or a crash dump where supported, debugger captures, tool
+versions, and evidence provenance. Analyzer results belong to the case without
+rewriting its original evidence.
+
+The dump and replacement are separate transactions. The wedged run survives
+until its capture is readable and verified. A successful dump does not prove
+the replacement booted, and a booting replacement does not excuse a corrupt or
+incomplete dump.
+
+This lifecycle is planned, not shipped. SUN-009 defines content-addressed
+captures and analyzers. SUN-010 defines the freeze, seal, handoff, replacement,
+and rollback state machine.
+
 ## House rules
 
 - **Out-of-band first.** Serial sockets, QEMU monitor, and debugger access must
@@ -119,6 +160,9 @@ debugger.*     SPARC register, instruction, memory, and backtrace capture
 host.trace.*   bounded eBPF/perf/process investigations
 evidence.*     append-only observations and artifact references
 hypothesis.*   predictions, discriminating tests, and falsification
+capture.*      planned immutable diagnostic cases and content identity
+analyzer.*     planned offline metadata extraction and diagnosis
+lifecycle.*    planned wedge capture and replacement-VM rollover
 ```
 
 Raw expert access is a feature, not an embarrassment. The answer to dangerous
