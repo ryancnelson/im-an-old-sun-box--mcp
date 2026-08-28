@@ -1,7 +1,7 @@
 import base64
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 from old_sun_mcp.console_broker import ConsoleBroker, ConsolePolicyStore, ConsoleTranscript
 from old_sun_mcp.console_web import ConsoleWebConfig, SessionSigner, create_console_app

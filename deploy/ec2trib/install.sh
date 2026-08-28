@@ -10,7 +10,7 @@ PREFIX=/opt/old-sun-console
 mkdir -p "$PREFIX/bin" /etc/old-sun-console
 python3 -m venv "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install --upgrade pip
-"$PREFIX/venv/bin/pip" install "$WHEEL"
+"$PREFIX/venv/bin/pip" install "$WHEEL[console]"
 cp "$(dirname "$0")/start-console" "$PREFIX/bin/start-console"
 chmod 0755 "$PREFIX/bin/start-console"
 

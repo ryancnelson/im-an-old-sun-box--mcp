@@ -1,4 +1,6 @@
 from importlib import import_module, resources
+from pathlib import Path
+import tomllib
 
 
 def test_package_and_entrypoint_are_importable() -> None:
@@ -13,3 +15,15 @@ def test_package_and_entrypoint_are_importable() -> None:
     assert static.joinpath("index.html").is_file()
     assert static.joinpath("vendor/xterm.mjs").is_file()
     assert static.joinpath("vendor/addon-fit.mjs").is_file()
+
+
+def test_tribblix_console_extra_has_no_pydantic_or_mcp_native_dependency() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    project = pyproject["project"]
+
+    assert project["dependencies"] == []
+    assert any(item.startswith("starlette") for item in project["optional-dependencies"]["console"])
+    assert not any(
+        "fastapi" in item or "pydantic" in item or item.startswith("mcp")
+        for item in project["optional-dependencies"]["console"]
+    )

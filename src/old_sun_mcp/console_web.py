@@ -14,10 +14,15 @@ import time
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 import httpx
+from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse
+from starlette.routing import Mount, Route, WebSocketRoute
+from starlette.staticfiles import StaticFiles
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .console_broker import ConsoleBroker
 from .errors import OldSunError
@@ -153,13 +158,10 @@ def create_console_app(
     *,
     oauth_client: OAuthClient | None = None,
     lifespan=None,
-) -> FastAPI:
+) -> Starlette:
     signer = SessionSigner(config.session_secret)
     oauth = oauth_client or GitHubOAuthClient(config)
-    app = FastAPI(title="Old Sun Box Console", docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 
-    @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -193,13 +195,11 @@ def create_console_app(
         if not secrets.compare_digest(origin, config.public_base_url.rstrip("/")):
             raise HTTPException(status_code=403, detail="Origin rejected")
 
-    @app.get("/healthz")
-    async def health() -> dict[str, Any]:
+    async def health(request: Request) -> JSONResponse:
         status = broker.status()
-        return {"ok": True, "console_connected": status["console_connected"]}
+        return JSONResponse({"ok": True, "console_connected": status["console_connected"]})
 
-    @app.get("/login")
-    async def login() -> RedirectResponse:
+    async def login(request: Request) -> RedirectResponse:
         state = signer.issue("oauth-state", {}, ttl_seconds=300)
         response = RedirectResponse(oauth.authorize_url(state), status_code=302)
         response.set_cookie(
@@ -212,8 +212,11 @@ def create_console_app(
         )
         return response
 
-    @app.get("/auth/callback")
-    async def callback(request: Request, code: str, state: str) -> RedirectResponse:
+    async def callback(request: Request) -> RedirectResponse:
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        if not code or not state:
+            raise HTTPException(status_code=400, detail="OAuth code and state are required")
         cookie_state = request.cookies.get(OAUTH_STATE_COOKIE)
         if not cookie_state or not secrets.compare_digest(cookie_state, state):
             raise HTTPException(status_code=403, detail="OAuth state rejected")
@@ -248,24 +251,20 @@ def create_console_app(
         )
         return response
 
-    @app.get("/logout")
-    async def logout() -> RedirectResponse:
+    async def logout(request: Request) -> RedirectResponse:
         response = RedirectResponse("/login", status_code=303)
         response.delete_cookie(SESSION_COOKIE)
         return response
 
-    @app.get("/")
     async def index(request: Request):
         if user_from_token(request.cookies.get(SESSION_COOKIE)) is None:
             return RedirectResponse("/login", status_code=302)
         return FileResponse(STATIC_ROOT / "index.html")
 
-    @app.get("/api/session")
-    async def session(request: Request) -> dict[str, Any]:
+    async def session(request: Request) -> JSONResponse:
         user = require_user(request)
-        return {"user": user, "console": broker.status()}
+        return JSONResponse({"user": user, "console": broker.status()})
 
-    @app.post("/api/policy")
     async def policy(request: Request) -> JSONResponse:
         user = require_user(request)
         require_origin(request)
@@ -284,7 +283,6 @@ def create_console_app(
             raise HTTPException(status_code=500, detail=exc.message) from exc
         return JSONResponse(result)
 
-    @app.websocket("/ws/console")
     async def console_socket(websocket: WebSocket) -> None:
         origin = websocket.headers.get("origin", "").rstrip("/")
         if not secrets.compare_digest(origin, config.public_base_url.rstrip("/")):
@@ -350,4 +348,20 @@ def create_console_app(
             await asyncio.gather(sender, return_exceptions=True)
             broker.unsubscribe(events)
 
+    app = Starlette(
+        debug=False,
+        lifespan=lifespan,
+        routes=[
+            Route("/healthz", health, methods=["GET"]),
+            Route("/login", login, methods=["GET"]),
+            Route("/auth/callback", callback, methods=["GET"]),
+            Route("/logout", logout, methods=["GET"]),
+            Route("/", index, methods=["GET"]),
+            Route("/api/session", session, methods=["GET"]),
+            Route("/api/policy", policy, methods=["POST"]),
+            WebSocketRoute("/ws/console", console_socket),
+            Mount("/static", StaticFiles(directory=STATIC_ROOT), name="static"),
+        ],
+    )
+    app.add_middleware(BaseHTTPMiddleware, dispatch=security_headers)
     return app
