@@ -52,6 +52,13 @@ class DebuggerProfile:
 
 
 @dataclass(frozen=True)
+class ConsoleConfig:
+    rpc_socket: Path | None = None
+    token_env: str = "OLD_SUN_CONSOLE_MCP_TOKEN"
+    run: str | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     configured: bool = False
     source: Path | None = None
@@ -65,6 +72,7 @@ class Config:
     trace_recipes: Mapping[str, TraceRecipe] = field(default_factory=dict)
     debugger_profiles: Mapping[str, DebuggerProfile] = field(default_factory=dict)
     ledger_dir: Path | None = None
+    console: ConsoleConfig = field(default_factory=ConsoleConfig)
 
 
 TOP_LEVEL_KEYS = {
@@ -78,6 +86,7 @@ TOP_LEVEL_KEYS = {
     "trace_recipes",
     "debugger_profiles",
     "ledger_dir",
+    "console",
 }
 
 
@@ -249,6 +258,24 @@ def load_config(
     max_output = int(_positive_number(raw.get("max_output_bytes", 262_144), "max_output_bytes"))
     timeout = _positive_number(raw.get("default_timeout_seconds", 30), "default_timeout_seconds")
     ledger = raw.get("ledger_dir")
+    console_raw = raw.get("console", {})
+    if not isinstance(console_raw, dict):
+        raise invalid_config("console must be a table")
+    _unknown_keys(console_raw, {"rpc_socket", "token_env", "run"}, "console")
+    rpc_socket_value = console_raw.get("rpc_socket")
+    if rpc_socket_value is not None and not isinstance(rpc_socket_value, str):
+        raise invalid_config("console.rpc_socket must be a string")
+    token_env = console_raw.get("token_env", "OLD_SUN_CONSOLE_MCP_TOKEN")
+    if not isinstance(token_env, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", token_env):
+        raise invalid_config("console.token_env must be an uppercase environment variable name")
+    console_run = console_raw.get("run")
+    if console_run is not None and (not isinstance(console_run, str) or not console_run.strip()):
+        raise invalid_config("console.run must be a non-empty string")
+    console = ConsoleConfig(
+        rpc_socket=_path_from(base, rpc_socket_value) if rpc_socket_value else None,
+        token_env=token_env,
+        run=console_run,
+    )
     return Config(
         configured=True,
         source=source,
@@ -262,4 +289,5 @@ def load_config(
         trace_recipes=recipes,
         debugger_profiles=debugger_profiles,
         ledger_dir=_path_from(base, ledger) if ledger else None,
+        console=console,
     )

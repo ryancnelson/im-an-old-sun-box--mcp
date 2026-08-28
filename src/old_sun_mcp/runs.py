@@ -26,19 +26,31 @@ def _contained(path: Path, root: Path) -> bool:
 
 
 def _default_command_line(pid: int) -> str:
-    try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise OldSunError("PID_IDENTITY_UNPROVED", f"Could not read command line for PID {pid}: {exc}") from exc
-    if result.returncode != 0 or not result.stdout.strip():
-        raise OldSunError("PID_IDENTITY_UNPROVED", f"Could not read command line for PID {pid}")
-    return result.stdout.strip()
+    failures: list[str] = []
+    for argv in (
+        ["ps", "-p", str(pid), "-o", "args="],
+        ["ps", "-p", str(pid), "-o", "command="],
+        ["pargs", "-l", str(pid)],
+    ):
+        try:
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            failures.append(f"{argv[0]}: {exc}")
+            continue
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        failures.append(f"{' '.join(argv[:2])}: exit {result.returncode}")
+    raise OldSunError(
+        "PID_IDENTITY_UNPROVED",
+        f"Could not read command line for PID {pid}",
+        {"attempts": failures},
+    )
 
 
 class RunRegistry:

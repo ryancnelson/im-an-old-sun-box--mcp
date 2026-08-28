@@ -1,12 +1,13 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from old_sun_mcp.config import Config, RunRoot
 from old_sun_mcp.errors import OldSunError
-from old_sun_mcp.runs import RunRegistry
+from old_sun_mcp.runs import RunRegistry, _default_command_line
 
 
 def configured(*roots: Path, default: str | None = None) -> Config:
@@ -134,3 +135,18 @@ def test_run_root_can_name_existing_lab_manifest_and_console(tmp_path: Path) -> 
     assert description["manifest"]["STATUS"] == "PASS"
     assert description["capabilities"]["console_log"] is True
     assert description["artifacts"]["replay.log"]["available"] is True
+
+
+def test_command_line_reader_falls_back_to_tribblix_pargs(monkeypatch) -> None:
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] == "ps":
+            return SimpleNamespace(returncode=1, stdout="")
+        return SimpleNamespace(returncode=0, stdout="31513: /tink/build/qemu-system-sparc64 -M niagara\n")
+
+    monkeypatch.setattr("old_sun_mcp.runs.subprocess.run", fake_run)
+
+    assert "/tink/build/qemu-system-sparc64" in _default_command_line(31513)
+    assert calls[-1] == ["pargs", "-l", "31513"]

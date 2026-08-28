@@ -28,6 +28,10 @@ def create_server(config: Config | None = None) -> FastMCP:
     register("debugger.capture", service.debugger_capture, mutate)
     register("evidence.record", service.evidence_record, observe); register("evidence.read", service.evidence_read, observe)
     register("hypothesis.start", service.hypothesis_start, observe); register("hypothesis.update", service.hypothesis_update, observe)
+    register("console.status", service.console_status, observe); register("console.read", service.console_read, observe)
+    register("console.acquire", service.console_acquire, mutate); register("console.write", service.console_write, mutate)
+    register("console.send_key", service.console_send_key, mutate); register("console.expect", service.console_expect, observe)
+    register("console.release", service.console_release, mutate)
     return server
 
 

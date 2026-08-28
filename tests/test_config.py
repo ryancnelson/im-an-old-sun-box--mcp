@@ -34,6 +34,11 @@ console_log = "replay.log"
 [paths]
 gdb = "/usr/bin/gdb-multiarch"
 
+[console]
+rpc_socket = "console/broker.sock"
+token_env = "TEST_CONSOLE_TOKEN"
+run = "demo"
+
 [debugger_profiles.default]
 architecture = "sparc:v9"
 endpoint = "127.0.0.1:1234"
@@ -69,6 +74,9 @@ requires_privilege = true
     assert config.guest_adapters["maintenance"].argv[1] == "{socket}"
     assert config.trace_recipes["tcg"].max_duration_seconds == 9
     assert config.ledger_dir == config_path.parent / "ledger"
+    assert config.console.rpc_socket == config_path.parent / "console/broker.sock"
+    assert config.console.token_env == "TEST_CONSOLE_TOKEN"
+    assert config.console.run == "demo"
 
 
 def test_project_local_config_precedes_xdg_and_home(tmp_path: Path) -> None:

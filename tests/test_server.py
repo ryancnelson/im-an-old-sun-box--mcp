@@ -19,6 +19,8 @@ async def test_server_enumerates_canonical_tools() -> None:
         "host.process_sample", "host.trace_capabilities", "host.trace",
         "debugger.capture", "evidence.record", "evidence.read",
         "hypothesis.start", "hypothesis.update",
+        "console.status", "console.read", "console.acquire", "console.write",
+        "console.send_key", "console.expect", "console.release",
     } <= names
 
 

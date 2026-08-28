@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import os
 from pathlib import Path
 from typing import Any, Callable
 
 from .config import Config
+from .console_rpc import ConsoleRpcClient
 from .debugger import HmpMonitor, QmpMonitor, capture as debugger_capture, run_gdb
 from .envelope import failure, success
 from .errors import OldSunError
@@ -18,9 +21,10 @@ from .runs import RunRegistry
 
 
 class OldSunService:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, console_client_factory: Callable[[], Any] | None = None):
         self.config = config
         self.runs = RunRegistry(config)
+        self.console_client_factory = console_client_factory
 
     def _call(self, *, layer: str, operation: str, run: str | None, source: dict[str, Any], mutation: str, action: Callable[[], Any]) -> dict[str, Any]:
         try:
@@ -170,6 +174,114 @@ class OldSunService:
     def _ledger_run(self, selector: str) -> str:
         name = self.runs.describe(selector)["name"]
         return name.replace("/", "--")
+
+    def _console_source(self) -> dict[str, Any]:
+        path = self.config.console.rpc_socket
+        return {"kind": "unix_socket", "ref": path.name if path else "configured console broker"}
+
+    def _console_client(self) -> Any:
+        if self.console_client_factory is not None:
+            return self.console_client_factory()
+        path = self.config.console.rpc_socket
+        if path is None:
+            raise OldSunError("CONFIG_NOT_FOUND", "console.rpc_socket is not configured")
+        token = os.environ.get(self.config.console.token_env)
+        if not token:
+            raise OldSunError("CONFIG_NOT_FOUND", f"Console token environment variable is not set: {self.config.console.token_env}")
+        return ConsoleRpcClient(path, token, timeout_seconds=self.config.default_timeout_seconds)
+
+    def console_status(self) -> dict[str, Any]:
+        return self._call(
+            layer="guest",
+            operation="console.status",
+            run=self.config.console.run,
+            source=self._console_source(),
+            mutation="observe",
+            action=lambda: self._console_client().request("status"),
+        )
+
+    def console_read(self, after_cursor: int = 0, max_bytes: int | None = None) -> dict[str, Any]:
+        maximum = min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes)
+        return self._call(
+            layer="guest",
+            operation="console.read",
+            run=self.config.console.run,
+            source=self._console_source(),
+            mutation="observe",
+            action=lambda: self._console_client().request(
+                "read", {"after_cursor": after_cursor, "max_bytes": maximum}
+            ),
+        )
+
+    def console_acquire(self, *, owner: str = "codex", reason: str, ttl_seconds: float = 30) -> dict[str, Any]:
+        def action() -> Any:
+            self._reason(reason)
+            return self._console_client().request(
+                "acquire", {"owner": owner, "reason": reason, "ttl_seconds": ttl_seconds}
+            )
+        return self._call(
+            layer="guest", operation="console.acquire", run=self.config.console.run,
+            source=self._console_source(), mutation="reversible", action=action,
+        )
+
+    def console_write(
+        self,
+        lease_id: str,
+        *,
+        reason: str,
+        text: str | None = None,
+        data_base64: str | None = None,
+    ) -> dict[str, Any]:
+        def action() -> Any:
+            self._reason(reason)
+            if (text is None) == (data_base64 is None):
+                raise OldSunError("INVALID_ARGUMENT", "Provide exactly one of text or data_base64")
+            encoded = data_base64 if data_base64 is not None else base64.b64encode(text.encode("utf-8")).decode("ascii")
+            return self._console_client().request(
+                "write", {"lease_id": lease_id, "data_base64": encoded, "reason": reason}
+            )
+        return self._call(
+            layer="guest", operation="console.write", run=self.config.console.run,
+            source=self._console_source(), mutation="disruptive", action=action,
+        )
+
+    def console_send_key(self, lease_id: str, key: str, *, reason: str) -> dict[str, Any]:
+        def action() -> Any:
+            self._reason(reason)
+            return self._console_client().request(
+                "send_key", {"lease_id": lease_id, "key": key, "reason": reason}
+            )
+        return self._call(
+            layer="guest", operation="console.send_key", run=self.config.console.run,
+            source=self._console_source(), mutation="disruptive", action=action,
+        )
+
+    def console_expect(
+        self,
+        pattern: str,
+        *,
+        after_cursor: int = 0,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        return self._call(
+            layer="guest", operation="console.expect", run=self.config.console.run,
+            source=self._console_source(), mutation="observe",
+            action=lambda: self._console_client().request(
+                "expect",
+                {
+                    "pattern": pattern,
+                    "after_cursor": after_cursor,
+                    "timeout_seconds": timeout_seconds or self.config.default_timeout_seconds,
+                },
+            ),
+        )
+
+    def console_release(self, lease_id: str) -> dict[str, Any]:
+        return self._call(
+            layer="guest", operation="console.release", run=self.config.console.run,
+            source=self._console_source(), mutation="reversible",
+            action=lambda: self._console_client().request("release", {"lease_id": lease_id}),
+        )
 
     def evidence_record(self, run: str, investigation_id: str, layer: str, claim: str, source: str, tool_result_digest: str | None = None, notes: str | None = None) -> dict[str, Any]:
         return self._call(layer="artifact", operation="evidence.record", run=run, source={"kind": "ledger", "ref": "ledger_dir"}, mutation="observe", action=lambda: self._ledger().record_evidence(self._ledger_run(run), investigation_id, layer, claim, source, tool_result_digest, notes))

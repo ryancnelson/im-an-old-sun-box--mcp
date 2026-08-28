@@ -269,6 +269,7 @@ class ConsoleBroker:
         max_input_bytes: int = 4096,
         max_read_bytes: int = 262_144,
         audit_path: Path | None = None,
+        run_id: str | None = None,
     ):
         self.console_socket = console_socket
         self.transcript = transcript
@@ -277,6 +278,7 @@ class ConsoleBroker:
         self.max_input_bytes = max_input_bytes
         self.max_read_bytes = max_read_bytes
         self.audit_path = audit_path or transcript.path.with_name("console-input.jsonl")
+        self.run_id = run_id or console_socket.parent.name
         self._input_queue = ConsoleInputQueue()
         self._connected = asyncio.Event()
         self._stopping = asyncio.Event()
@@ -504,6 +506,7 @@ class ConsoleBroker:
     def status(self) -> dict[str, Any]:
         active = self._active_lease()
         return {
+            "run": self.run_id,
             "console_connected": self._connected.is_set(),
             "console_socket": self.console_socket.name,
             "cursor": self.transcript.cursor,
