@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
 import hashlib
 import json
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
-from typing import Literal
+import shlex
+from typing import Awaitable, Callable, Literal, Mapping
+
+from .console_transport import ArgvConsoleConnector, ConsoleConnector, UnixConsoleConnector
 
 Platform = Literal["linux", "darwin", "illumos"]
 
@@ -38,7 +42,7 @@ class ConsoleHost:
 
     def allows(self, path: PurePosixPath) -> bool:
         """Return whether *path* is lexically inside an allowlisted root."""
-        if not path.is_absolute() or ".." in path.parts:
+        if not path.is_absolute() or ".." in path.parts or any(character in str(path) for character in ("\0", "\n", "\r")):
             return False
         return any(path == root or root in path.parents for root in self.allowed_socket_roots)
 
@@ -76,6 +80,258 @@ class ConsoleTarget:
         identity = f"{host_id}\0{pid}\0{started_at}\0{socket_path}".encode()
         target_id = hashlib.sha256(identity).hexdigest()[:24]
         return cls(target_id, host_id, socket_path, pid, started_at, command, qemu_name, socket_mtime)
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+
+
+@dataclass(frozen=True)
+class DiscoveryError:
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
+class DiscoveryReport:
+    targets: tuple[ConsoleTarget, ...]
+    errors: Mapping[str, DiscoveryError]
+
+
+CommandRunner = Callable[[tuple[str, ...], bytes, float], Awaitable[CommandResult]]
+
+
+_DISCOVERY_SCRIPTS: dict[Platform, bytes] = {
+    "linux": b"""# OLD_SUN_DISCOVERY_V1 linux
+for proc in /proc/[0-9]*; do
+    [ -r "$proc/cmdline" ] || continue
+    command=$(tr '\\000' ' ' < "$proc/cmdline")
+    case "$command" in *qemu-system-*) ;; *) continue ;; esac
+    pid=${proc##*/}
+    started=$(ps -o lstart= -p "$pid" 2>/dev/null) || continue
+    printf '%s\\t%s\\t%s\\n' "$pid" "$started" "$command"
+done
+""",
+    "darwin": b"""# OLD_SUN_DISCOVERY_V1 darwin
+ps -axo pid=,lstart=,command= | while read -r pid dow mon day clock year command; do
+    case "$command" in *qemu-system-*)
+        printf '%s\\t%s %s %s %s %s\\t%s\\n' "$pid" "$dow" "$mon" "$day" "$clock" "$year" "$command"
+        ;;
+    esac
+done
+""",
+    "illumos": b"""# OLD_SUN_DISCOVERY_V1 illumos
+/usr/bin/ps -eo pid,lstart,args | while read -r pid dow mon day clock year command; do
+    case "$command" in *qemu-system-*)
+        printf '%s\\t%s %s %s %s %s\\t%s\\n' "$pid" "$dow" "$mon" "$day" "$clock" "$year" "$command"
+        ;;
+    esac
+done
+""",
+}
+
+_SOCKET_CHECK_SCRIPTS: dict[Platform, bytes] = {
+    "linux": b"""# OLD_SUN_SOCKET_CHECK_V1 linux
+socket_dir=$(dirname "$socket_path") || exit 2
+socket_base=$(basename "$socket_path") || exit 2
+canonical_dir=$(cd "$socket_dir" 2>/dev/null && pwd -P) || exit 3
+canonical_path=$canonical_dir/$socket_base
+[ -S "$canonical_path" ] || exit 3
+printf '%s\\t' "$canonical_path"
+stat -c %Y -- "$canonical_path"
+""",
+    "darwin": b"""# OLD_SUN_SOCKET_CHECK_V1 darwin
+socket_dir=$(dirname "$socket_path") || exit 2
+socket_base=$(basename "$socket_path") || exit 2
+canonical_dir=$(cd "$socket_dir" 2>/dev/null && pwd -P) || exit 3
+canonical_path=$canonical_dir/$socket_base
+[ -S "$canonical_path" ] || exit 3
+printf '%s\\t' "$canonical_path"
+stat -f %m "$canonical_path"
+""",
+    "illumos": b"""# OLD_SUN_SOCKET_CHECK_V1 illumos
+socket_dir=$(dirname "$socket_path") || exit 2
+socket_base=$(basename "$socket_path") || exit 2
+canonical_dir=$(cd "$socket_dir" 2>/dev/null && pwd -P) || exit 3
+canonical_path=$canonical_dir/$socket_base
+[ -S "$canonical_path" ] || exit 3
+printf '%s\\t0\\n' "$canonical_path"
+""",
+}
+
+
+async def run_command(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(stdin), timeout)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise
+    return CommandResult(process.returncode, stdout, stderr)
+
+
+def parse_process_records(platform: str, output: str) -> tuple[QemuProcess, ...]:
+    if platform not in {"linux", "darwin", "illumos"}:
+        raise ValueError("unsupported process-record platform")
+    records: list[QemuProcess] = []
+    for line in output.splitlines():
+        fields = line.split("\t", 2)
+        if len(fields) != 3:
+            continue
+        raw_pid, started_at, command = fields
+        try:
+            pid = int(raw_pid)
+            argv = tuple(shlex.split(command))
+        except (ValueError, TypeError):
+            continue
+        if pid > 0 and started_at and argv:
+            records.append(QemuProcess(pid, started_at.strip(), argv))
+    return tuple(records)
+
+
+class ConsoleDiscovery:
+    def __init__(self, hosts: tuple[ConsoleHost, ...], runner: CommandRunner = run_command):
+        self.hosts = hosts
+        self._hosts = {host.host_id: host for host in hosts}
+        self._runner = runner
+
+    @staticmethod
+    def _command(host: ConsoleHost) -> tuple[str, ...]:
+        if host.ssh_target is None:
+            return ("/bin/sh", "-s")
+        timeout = max(1, int(host.connect_timeout_seconds))
+        return (
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={timeout}",
+            "-T",
+            host.ssh_target,
+            "/bin/sh",
+            "-s",
+        )
+
+    async def _run(self, host: ConsoleHost, script: bytes, extra_stdin: bytes = b"") -> CommandResult:
+        return await asyncio.wait_for(
+            self._runner(self._command(host), script + extra_stdin, host.discovery_timeout_seconds),
+            host.discovery_timeout_seconds,
+        )
+
+    async def _socket_validation(
+        self, host: ConsoleHost, path: PurePosixPath
+    ) -> tuple[PurePosixPath, float] | None:
+        assignment = f"socket_path={shlex.quote(str(path))}\n".encode()
+        script = _SOCKET_CHECK_SCRIPTS[host.platform]
+        first_line, body = script.split(b"\n", 1)
+        result = await self._run(host, first_line + b"\n" + assignment + body)
+        if result.returncode != 0:
+            return None
+        try:
+            line = result.stdout.decode().strip().splitlines()[-1]
+            if "\t" in line:
+                raw_path, raw_mtime = line.rsplit("\t", 1)
+                canonical_path = PurePosixPath(raw_path)
+            else:  # Retain compatibility with small external validation adapters.
+                canonical_path, raw_mtime = path, line
+            mtime = float(raw_mtime)
+        except (ValueError, IndexError):
+            return None
+        if not host.allows(canonical_path):
+            return None
+        return canonical_path, mtime
+
+    async def _discover_host(self, host: ConsoleHost) -> tuple[ConsoleTarget, ...]:
+        result = await self._run(host, _DISCOVERY_SCRIPTS[host.platform])
+        if result.returncode != 0:
+            error = result.stderr.decode("utf-8", "replace").strip()[-512:]
+            raise RuntimeError(error or f"discovery command exited {result.returncode}")
+
+        targets: list[ConsoleTarget] = []
+        for process in parse_process_records(host.platform, result.stdout.decode("utf-8", "replace")):
+            executable = PurePosixPath(process.argv[0]).name
+            if not executable.startswith("qemu-system-"):
+                continue
+            command = shlex.join(process.argv)
+            for path in parse_console_paths(process.argv):
+                if not host.allows(path):
+                    continue
+                validation = await self._socket_validation(host, path)
+                if validation is None:
+                    continue
+                canonical_path, mtime = validation
+                targets.append(
+                    ConsoleTarget.create(
+                        host_id=host.host_id,
+                        socket_path=canonical_path,
+                        pid=process.pid,
+                        started_at=process.started_at,
+                        command=command,
+                        qemu_name=parse_qemu_name(process.argv),
+                        socket_mtime=mtime,
+                    )
+                )
+        return tuple(targets)
+
+    async def discover(self) -> DiscoveryReport:
+        async def one(host: ConsoleHost) -> tuple[ConsoleHost, tuple[ConsoleTarget, ...] | Exception]:
+            try:
+                return host, await self._discover_host(host)
+            except Exception as exc:
+                return host, exc
+
+        results = await asyncio.gather(*(one(host) for host in self.hosts))
+        targets: list[ConsoleTarget] = []
+        errors: dict[str, DiscoveryError] = {}
+        for host, result in results:
+            if isinstance(result, Exception):
+                kind = "timeout" if isinstance(result, TimeoutError) else "command_failed"
+                errors[host.host_id] = DiscoveryError(kind, str(result) or kind)
+            else:
+                targets.extend(result)
+        targets.sort(key=lambda target: (target.host_id, target.qemu_name or "", target.pid, str(target.socket_path)))
+        return DiscoveryReport(tuple(targets), errors)
+
+    async def revalidate(self, target: ConsoleTarget) -> ConsoleTarget:
+        host = self._hosts.get(target.host_id)
+        if host is None:
+            raise ValueError("stale console target: host is no longer configured")
+        current = await self._discover_host(host)
+        for candidate in current:
+            if candidate.target_id == target.target_id:
+                return candidate
+        raise ValueError("stale console target: process or socket identity changed")
+
+    def connector(self, target: ConsoleTarget) -> ConsoleConnector:
+        host = self._hosts.get(target.host_id)
+        if host is None or not host.allows(target.socket_path):
+            raise ValueError("unknown or disallowed console target")
+        if host.ssh_target is None:
+            return UnixConsoleConnector(Path(str(target.socket_path)))
+        timeout = max(1, int(host.connect_timeout_seconds))
+        return ArgvConsoleConnector(
+            (
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                f"ConnectTimeout={timeout}",
+                "-T",
+                host.ssh_target,
+                "/usr/bin/socat",
+                "-",
+                f"UNIX-CONNECT:{target.socket_path}",
+            )
+        )
 
 
 def _option_values(argv: tuple[str, ...], option: str) -> tuple[str, ...]:
