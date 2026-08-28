@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Old Sun Box Console</title>
+    <link rel="stylesheet" href="/static/vendor/xterm.css">
+    <link rel="stylesheet" href="/static/console.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Old Sun Box Console</h1>
+        <p id="identity"></p>
+      </div>
+      <div id="connection" class="status">connecting</div>
+    </header>
+    <main>
+      <div id="terminal" aria-label="Solaris serial console"></div>
+      <aside>
+        <label class="policy">
+          <input id="block-mcp" type="checkbox">
+          Block MCP keyboard input
+        </label>
+        <dl>
+          <dt>Run</dt><dd id="run">unknown</dd>
+          <dt>MCP lease</dt><dd id="lease">none</dd>
+          <dt>Cursor</dt><dd id="cursor">0</dd>
+        </dl>
+        <p id="error" role="alert"></p>
+        <a href="/logout">Sign out</a>
+      </aside>
+    </main>
+    <script type="module" src="/static/console.js"></script>
+  </body>
+</html>
