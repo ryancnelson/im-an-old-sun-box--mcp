@@ -28,6 +28,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from .console_auth import GitHubIdentity, GitHubOAuth, identity_allowed
 from .console_broker import ConsoleBroker, ConsoleEvent, ConsoleUnavailable
 from .console_control import ConsoleControlServer
+from .console_discovery import ConsoleHost, parse_hosts_json
 from .console_state import OperatorState
 from .console_transport import ArgvConsoleConnector, ConsoleConnector, UnixConsoleConnector
 
@@ -41,7 +42,8 @@ class ConsoleWebConfig:
     control_socket: Path
     mcp_token: str
     session_secret: str
-    transport: ConsoleConnector
+    transport: ConsoleConnector | None
+    hosts: tuple[ConsoleHost, ...] = ()
     lifecycle_adapter: tuple[str, ...] | None = None
     target_label: str = "local host"
     socket_label: str = "configured console"
@@ -70,10 +72,18 @@ class ConsoleWebConfig:
 
         socket_value = values.get("OLD_SUN_CONSOLE_SOCKET")
         adapter_value = values.get("OLD_SUN_CONSOLE_ADAPTER_JSON")
-        if bool(socket_value) == bool(adapter_value):
+        hosts_value = values.get("OLD_SUN_CONSOLE_HOSTS_JSON")
+        if hosts_value and (socket_value or adapter_value):
+            raise ValueError("host registry cannot be combined with a fixed console socket or adapter")
+        if not hosts_value and bool(socket_value) == bool(adapter_value):
             raise ValueError("configure exactly one console socket or adapter")
-        if socket_value:
-            transport: ConsoleConnector = UnixConsoleConnector(Path(socket_value).expanduser().resolve())
+
+        hosts: tuple[ConsoleHost, ...] = ()
+        transport: ConsoleConnector | None = None
+        if hosts_value:
+            hosts = parse_hosts_json(hosts_value)
+        elif socket_value:
+            transport = UnixConsoleConnector(Path(socket_value).expanduser().resolve())
         else:
             try:
                 raw_argv = json.loads(adapter_value or "")
@@ -125,6 +135,7 @@ class ConsoleWebConfig:
             mcp_token=mcp_token,
             session_secret=session_secret,
             transport=transport,
+            hosts=hosts,
             lifecycle_adapter=lifecycle_adapter,
             target_label=values.get("OLD_SUN_CONSOLE_TARGET_LABEL", "local host"),
             socket_label=values.get("OLD_SUN_CONSOLE_SOCKET_LABEL", socket_value or "adapter-managed socket"),

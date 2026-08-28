@@ -58,6 +58,28 @@ def test_dev_auth_is_rejected_on_non_loopback() -> None:
         raise AssertionError("non-loopback dev auth was accepted")
 
 
+def test_host_registry_can_replace_fixed_transport() -> None:
+    values = {
+        "OLD_SUN_CONSOLE_BIND": "127.0.0.1",
+        "OLD_SUN_CONSOLE_DEV_AUTH": "1",
+        "OLD_SUN_CONSOLE_HOSTS_JSON": """[
+          {
+            "id": "ec2trib",
+            "platform": "illumos",
+            "ssh_target": "root@ec2trib",
+            "allowed_socket_roots": ["/tink/runs"]
+          }
+        ]""",
+        "OLD_SUN_CONSOLE_MCP_TOKEN": "m" * 32,
+        "OLD_SUN_CONSOLE_SESSION_SECRET": "s" * 32,
+    }
+
+    selected = ConsoleWebConfig.from_env(values)
+
+    assert selected.transport is None
+    assert [host.host_id for host in selected.hosts] == ["ec2trib"]
+
+
 def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
     selected = config(tmp_path, development=True)
     state = OperatorState(selected.state_path)
