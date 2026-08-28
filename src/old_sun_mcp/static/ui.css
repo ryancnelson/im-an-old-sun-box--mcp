@@ -3,7 +3,10 @@
 html, body { height: 100%; margin: 0; background: #050705; color: #d4ffd4; }
 body { display: flex; flex-direction: column; }
 header { background: #101510; border-bottom: 1px solid #294029; }
-.header-primary { display: flex; gap: 1rem; align-items: center; min-height: 3rem; padding: .5rem 1rem .3rem; }
+.header-primary { display: flex; gap: .75rem; align-items: center; min-height: 3rem; padding: .5rem 1rem .3rem; flex-wrap: wrap; }
+.target-controls { display: flex; gap: .35rem; align-items: center; }
+.target-controls select { max-width: 22rem; color: #d4ffd4; background: #101510; border: 1px solid #4f8f4f; padding: .35rem; }
+.target-controls button { color: #d4ffd4; background: #182218; border: 1px solid #4f8f4f; border-radius: .25rem; padding: .35rem .55rem; }
 .connection-detail { display: flex; gap: .8rem; align-items: center; padding: .2rem 1rem .5rem; color: #8fa98f; font-size: .85rem; }
 .connection-detail .socket { color: #b5ceb5; font-family: Menlo, Monaco, Consolas, monospace; }
 #vm-stats { margin-left: auto; color: #b5ceb5; }
@@ -12,6 +15,7 @@ header a, .button { color: #9dff9d; }
 .controls { display: flex; gap: .4rem; }
 .controls button { color: #d4ffd4; background: #182218; border: 1px solid #4f8f4f; border-radius: .25rem; padding: .35rem .55rem; cursor: pointer; }
 .controls button:disabled { opacity: .5; cursor: wait; }
+.target-controls button:disabled { opacity: .5; cursor: wait; }
 #terminal { flex: 1; min-height: 0; padding: .75rem; }
 .xterm,
 .xterm .xterm-char-measure-element,
@@ -34,3 +38,8 @@ header a, .button { color: #9dff9d; }
 .login { align-items: center; justify-content: center; }
 .login main { width: min(30rem, 90vw); padding: 2rem; background: #101510; border: 1px solid #294029; border-radius: .5rem; }
 .button { display: inline-block; margin-top: 1rem; padding: .7rem 1rem; border: 1px solid #4f8f4f; border-radius: .3rem; text-decoration: none; }
+@media (max-width: 900px) {
+  .target-controls { order: 3; width: 100%; }
+  .target-controls select { min-width: 0; flex: 1; }
+  header .user { margin-left: 0; }
+}

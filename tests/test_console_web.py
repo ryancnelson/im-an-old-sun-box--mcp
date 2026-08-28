@@ -1,4 +1,5 @@
 from pathlib import Path
+from pathlib import PurePosixPath
 import tempfile
 
 from starlette.testclient import TestClient
@@ -7,6 +8,7 @@ import pytest
 
 from old_sun_mcp.console_auth import GitHubIdentity
 from old_sun_mcp.console_broker import ConsoleBroker
+from old_sun_mcp.console_discovery import ConsoleTarget, DiscoveryError, DiscoveryReport
 from old_sun_mcp.console_state import OperatorState
 from old_sun_mcp.console_transport import UnixConsoleConnector
 from old_sun_mcp.console_web import ConsoleWebConfig, create_console_app
@@ -22,6 +24,47 @@ class FakeOAuth:
     async def exchange_identity(self, code: str) -> GitHubIdentity:
         assert code == "code"
         return self.identity
+
+
+class FakeTargetManager:
+    def __init__(self) -> None:
+        self.current = None
+        self.target = ConsoleTarget.create(
+            host_id="ec2cicd",
+            socket_path=PurePosixPath("/var/lib/niagara-ci/experiments/run/console.sock"),
+            pid=343827,
+            started_at="2026-08-26T21:04:46Z",
+            command="qemu-system-sparc64 -name oi-lab",
+            qemu_name="oi-lab",
+            socket_mtime=100.0,
+        )
+
+    async def discover(self) -> DiscoveryReport:
+        return DiscoveryReport((self.target,), {"ec2trib": DiscoveryError("timeout", "timed out")})
+
+    async def select(self, target_id: str, *, actor: str = "human") -> ConsoleTarget:
+        if target_id == "stale":
+            raise ValueError("stale console target")
+        if target_id != self.target.target_id:
+            raise ValueError("unknown or stale console target; refresh discovery")
+        self.current = self.target
+        return self.target
+
+    def snapshot(self):
+        if self.current is None:
+            return None
+        return {
+            "target_id": self.current.target_id,
+            "host_id": self.current.host_id,
+            "socket_path": str(self.current.socket_path),
+            "pid": self.current.pid,
+            "started_at": self.current.started_at,
+            "qemu_name": self.current.qemu_name,
+            "capabilities": {"lifecycle": False},
+        }
+
+    def lifecycle_adapter(self):
+        return None
 
 
 def config(tmp_path: Path, *, development: bool) -> ConsoleWebConfig:
@@ -98,6 +141,10 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
         assert "Liberation Mono" in app_javascript
         assert "Gallant12" not in app_javascript
         assert "Gallant12" not in stylesheet
+        assert 'id="host-select"' in response.text
+        assert 'id="console-select"' in response.text
+        assert 'id="refresh-targets"' in response.text
+        assert 'id="connect-target"' in response.text
         with client.websocket_connect(
             "ws://127.0.0.1:8765/ws/console",
             headers={"origin": selected.public_url},
@@ -107,6 +154,52 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
             websocket.send_json({"type": "set_mcp_write_blocked", "blocked": False})
             changed = websocket.receive_json()
             assert changed["mcp_write_blocked"] is False
+
+
+def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:
+    selected = config(tmp_path, development=True)
+    state = OperatorState(selected.state_path)
+    state.load()
+    broker = ConsoleBroker(selected.transport, state)
+    manager = FakeTargetManager()
+    app = create_console_app(selected, broker=broker, target_manager=manager, manage_services=False)
+
+    with TestClient(app, base_url=selected.public_url) as client:
+        client.get("/login")
+        listing = client.get("/api/targets")
+        assert listing.status_code == 200
+        assert listing.json()["targets"][0]["host_id"] == "ec2cicd"
+        assert listing.json()["errors"]["ec2trib"]["kind"] == "timeout"
+        assert client.get("/api/target/current").json()["target"] is None
+
+        rejected = client.post(
+            "/api/target/select",
+            json={"target_id": manager.target.target_id},
+            headers={"origin": "https://wrong.test"},
+        )
+        assert rejected.status_code == 403
+        connected = client.post(
+            "/api/target/select",
+            json={"target_id": manager.target.target_id},
+            headers={"origin": selected.public_url},
+        )
+        assert connected.status_code == 200
+        assert connected.json()["target"]["pid"] == 343827
+        assert client.get("/api/state").json()["current_target"]["host_id"] == "ec2cicd"
+        assert client.post(
+            "/api/target/select",
+            json={"target_id": "stale"},
+            headers={"origin": selected.public_url},
+        ).status_code == 409
+        assert client.post(
+            "/api/target/select",
+            json={"target_id": "missing"},
+            headers={"origin": selected.public_url},
+        ).status_code == 404
+        assert client.post(
+            "/api/lifecycle/reset",
+            headers={"origin": selected.public_url},
+        ).status_code == 503
 
 
 def test_websocket_rejects_missing_session(tmp_path) -> None:

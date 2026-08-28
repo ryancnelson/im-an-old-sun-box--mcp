@@ -17,6 +17,16 @@ terminal.focus();
 const status = document.getElementById("connection");
 const block = document.getElementById("mcp-block");
 const vmStats = document.getElementById("vm-stats");
+const hostSelect = document.getElementById("host-select");
+const consoleSelect = document.getElementById("console-select");
+const refreshTargets = document.getElementById("refresh-targets");
+const connectTarget = document.getElementById("connect-target");
+const activeHost = document.getElementById("active-host");
+const activeSocket = document.getElementById("active-socket");
+const activeTransport = document.getElementById("active-transport");
+const activePid = document.getElementById("active-pid");
+let targets = [];
+let currentTarget = null;
 const protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const socket = new WebSocket(`${protocol}//${location.host}/ws/console`);
 socket.binaryType = "arraybuffer";
@@ -32,6 +42,10 @@ socket.onmessage = async (event) => {
     if (message.type === "status") {
       status.textContent = message.connected ? "QEMU connected" : "QEMU disconnected";
       block.checked = message.mcp_write_blocked;
+      if (Object.hasOwn(message, "current_target")) updateActiveTarget(message.current_target, false);
+    } else if (message.type === "target") {
+      terminal.reset();
+      updateActiveTarget(message.target, true);
     } else if (message.type === "input_error") {
       terminal.write(`\r\n[broker: ${message.error}]\r\n`);
     }
@@ -47,6 +61,88 @@ terminal.onData((data) => {
 block.addEventListener("change", () => {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "set_mcp_write_blocked", blocked: block.checked }));
+  }
+});
+const lifecycleButtons = document.querySelectorAll("button[data-action]");
+const updateActiveTarget = (target, announce) => {
+  currentTarget = target;
+  if (!target) {
+    activeHost.textContent = "none";
+    activeSocket.textContent = "no console selected";
+    activeTransport.textContent = "";
+    activePid.textContent = "";
+  } else {
+    activeHost.textContent = target.host_id;
+    activeSocket.textContent = target.socket_path;
+    activeTransport.textContent = target.host_id === "minnie-2-2" ? "via local socket" : "via SSH";
+    activePid.textContent = `PID ${target.pid}`;
+    if (announce) terminal.write(`\r\n[broker: connected target ${target.host_id} PID ${target.pid} ${target.socket_path}]\r\n`);
+  }
+  const lifecycleAvailable = target
+    ? Boolean(target.capabilities?.lifecycle)
+    : document.body.dataset.legacyLifecycle === "true";
+  lifecycleButtons.forEach((button) => { button.disabled = !lifecycleAvailable; });
+};
+
+const populateConsoles = () => {
+  const selected = consoleSelect.value;
+  consoleSelect.replaceChildren();
+  targets.filter((target) => target.host_id === hostSelect.value).forEach((target) => {
+    const option = document.createElement("option");
+    option.value = target.target_id;
+    option.textContent = `${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.socket_path}`;
+    consoleSelect.append(option);
+  });
+  if ([...consoleSelect.options].some((option) => option.value === selected)) consoleSelect.value = selected;
+  connectTarget.disabled = !consoleSelect.value;
+};
+
+const loadTargets = async () => {
+  refreshTargets.disabled = true;
+  try {
+    const response = await fetch("/api/targets");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    targets = payload.targets;
+    const selectedHost = hostSelect.value || currentTarget?.host_id;
+    hostSelect.replaceChildren();
+    [...new Set(targets.map((target) => target.host_id))].forEach((hostId) => {
+      const option = document.createElement("option");
+      option.value = hostId;
+      option.textContent = hostId;
+      hostSelect.append(option);
+    });
+    if ([...hostSelect.options].some((option) => option.value === selectedHost)) hostSelect.value = selectedHost;
+    populateConsoles();
+    Object.entries(payload.errors).forEach(([hostId, error]) => {
+      terminal.write(`\r\n[discovery ${hostId}: ${error.kind}: ${error.message}]\r\n`);
+    });
+  } catch (error) {
+    terminal.write(`\r\n[discovery failed: ${error.message}]\r\n`);
+  } finally {
+    refreshTargets.disabled = false;
+  }
+};
+
+hostSelect.addEventListener("change", populateConsoles);
+consoleSelect.addEventListener("change", () => { connectTarget.disabled = !consoleSelect.value; });
+refreshTargets.addEventListener("click", loadTargets);
+connectTarget.addEventListener("click", async () => {
+  if (!consoleSelect.value) return;
+  connectTarget.disabled = true;
+  try {
+    const response = await fetch("/api/target/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: consoleSelect.value }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
+  } catch (error) {
+    terminal.write(`\r\n[target connection failed: ${error.message}]\r\n`);
+  } finally {
+    connectTarget.disabled = !consoleSelect.value;
+    terminal.focus();
   }
 });
 document.querySelectorAll("button[data-action]").forEach((button) => {
@@ -83,5 +179,6 @@ const refreshStats = async () => {
   }
 };
 refreshStats();
+loadTargets();
 setInterval(refreshStats, 10000);
 window.addEventListener("resize", () => terminal.focus());

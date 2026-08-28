@@ -74,3 +74,8 @@ class ConsoleTargetManager:
 
     def snapshot(self) -> dict[str, Any] | None:
         return None if self.current is None else self._event(self.current)
+
+    def lifecycle_adapter(self) -> tuple[str, ...] | None:
+        if self.current is None:
+            return None
+        return self._hosts[self.current.host_id].lifecycle_argv

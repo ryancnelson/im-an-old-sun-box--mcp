@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import html
 import ipaddress
 import json
@@ -28,9 +28,10 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from .console_auth import GitHubIdentity, GitHubOAuth, identity_allowed
 from .console_broker import ConsoleBroker, ConsoleEvent, ConsoleUnavailable
 from .console_control import ConsoleControlServer
-from .console_discovery import ConsoleHost, parse_hosts_json
+from .console_discovery import ConsoleDiscovery, ConsoleHost, ConsoleTarget, DiscoveryReport, parse_hosts_json
 from .console_state import OperatorState
 from .console_transport import ArgvConsoleConnector, ConsoleConnector, UnixConsoleConnector
+from .console_targets import ConsoleTargetManager
 
 
 @dataclass(frozen=True)
@@ -183,18 +184,24 @@ def _console_page(login: str, config: ConsoleWebConfig) -> HTMLResponse:
     target = html.escape(config.target_label)
     socket = html.escape(config.socket_label)
     transport = html.escape(config.transport_label)
+    legacy_lifecycle = "true" if config.lifecycle_adapter is not None and not config.hosts else "false"
     return HTMLResponse(
         "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
         "<title>Old Sun console</title><link rel='stylesheet' href='/static/xterm.css'>"
-        "<link rel='stylesheet' href='/static/ui.css'></head><body>"
+        f"<link rel='stylesheet' href='/static/ui.css'></head><body data-legacy-lifecycle='{legacy_lifecycle}'>"
         "<header><div class='header-primary'><strong>console.unix.wtf</strong><span id='connection'>connecting</span>"
+        "<div class=\"target-controls\"><select id=\"host-select\" aria-label=\"Console host\"></select>"
+        "<select id=\"console-select\" aria-label=\"QEMU console\"></select>"
+        "<button id=\"refresh-targets\" type=\"button\">Refresh</button>"
+        "<button id=\"connect-target\" type=\"button\">Connect</button></div>"
         "<nav class='controls'><button data-action='break'>Send Break</button>"
         "<button data-action='reset'>Reset VM</button><button data-action='powerdown'>Power off</button>"
         "<button data-action='start'>Start VM</button></nav>"
         f"<span class='user'>{safe_login}</span><label><input id='mcp-block' type='checkbox' checked> Block MCP typing</label>"
         "<a href='/logout'>Sign out</a></div>"
-        f"<div class='connection-detail'>Connected to: <strong>{target}</strong>"
-        f"<span class='socket'>{socket}</span><span>via {transport}</span>"
+        f"<div class='connection-detail'>Connected to: <strong id='active-host'>{target}</strong>"
+        f"<span class='socket' id='active-socket'>{socket}</span><span id='active-transport'>via {transport}</span>"
+        "<span id='active-pid'></span>"
         "<span id='vm-stats'>statistics: waiting</span></div></header><main id='terminal'></main>"
         "<script src='/static/xterm.js'></script><script src='/static/app.js'></script></body></html>"
     )
@@ -204,11 +211,15 @@ def create_console_app(
     config: ConsoleWebConfig,
     *,
     broker: ConsoleBroker | None = None,
+    target_manager: ConsoleTargetManager | None = None,
     oauth: GitHubOAuth | None = None,
     manage_services: bool = True,
 ) -> Starlette:
     state = OperatorState(config.state_path)
     selected_broker = broker or ConsoleBroker(config.transport, state)
+    selected_manager = target_manager
+    if selected_manager is None and config.hosts:
+        selected_manager = ConsoleTargetManager(ConsoleDiscovery(config.hosts), selected_broker, state)
     control = ConsoleControlServer(
         config.control_socket,
         config.mcp_token,
@@ -225,9 +236,12 @@ def create_console_app(
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         if manage_services:
             await selected_broker.start()
+            if selected_manager is not None:
+                await selected_manager.restore()
             await control.start()
         app.state.broker = selected_broker
         app.state.control = control
+        app.state.target_manager = selected_manager
         yield
         if manage_services:
             await control.stop()
@@ -276,13 +290,71 @@ def create_console_app(
     async def api_state(request: Request) -> Response:
         if not _authenticated(request.scope):
             return JSONResponse({"error": "authentication_required"}, status_code=401)
-        return JSONResponse(selected_broker.snapshot())
+        snapshot = selected_broker.snapshot()
+        snapshot["current_target"] = selected_manager.snapshot() if selected_manager is not None else None
+        return JSONResponse(snapshot)
+
+    def _target_payload(target: ConsoleTarget) -> dict[str, Any]:
+        return {
+            "target_id": target.target_id,
+            "host_id": target.host_id,
+            "socket_path": str(target.socket_path),
+            "pid": target.pid,
+            "started_at": target.started_at,
+            "command": target.command,
+            "qemu_name": target.qemu_name,
+            "socket_mtime": target.socket_mtime,
+        }
+
+    async def api_targets(request: Request) -> Response:
+        if not _authenticated(request.scope):
+            return JSONResponse({"error": "authentication_required"}, status_code=401)
+        if selected_manager is None:
+            return JSONResponse({"targets": [], "errors": {}})
+        report: DiscoveryReport = await selected_manager.discover()
+        return JSONResponse(
+            {
+                "targets": [_target_payload(target) for target in report.targets],
+                "errors": {host_id: asdict(error) for host_id, error in report.errors.items()},
+            }
+        )
+
+    async def api_current_target(request: Request) -> Response:
+        if not _authenticated(request.scope):
+            return JSONResponse({"error": "authentication_required"}, status_code=401)
+        return JSONResponse({"target": selected_manager.snapshot() if selected_manager is not None else None})
+
+    async def api_select_target(request: Request) -> Response:
+        if not _authenticated(request.scope):
+            return JSONResponse({"error": "authentication_required"}, status_code=401)
+        if request.headers.get("origin") != config.public_url:
+            return JSONResponse({"error": "origin_rejected"}, status_code=403)
+        if selected_manager is None:
+            return JSONResponse({"error": "target_discovery_unavailable"}, status_code=503)
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid_request"}, status_code=400)
+        target_id = body.get("target_id") if isinstance(body, dict) else None
+        if not isinstance(target_id, str) or not target_id:
+            return JSONResponse({"error": "target_id_required"}, status_code=400)
+        try:
+            await selected_manager.select(target_id, actor="human")
+        except ValueError as exc:
+            message = str(exc)
+            if message.startswith("unknown"):
+                return JSONResponse({"error": "target_not_found", "detail": message}, status_code=404)
+            return JSONResponse({"error": "target_stale", "detail": message}, status_code=409)
+        return JSONResponse({"target": selected_manager.snapshot()})
 
     async def invoke_lifecycle(action: str) -> tuple[int, dict[str, Any]]:
-        if config.lifecycle_adapter is None:
+        lifecycle_adapter = (
+            selected_manager.lifecycle_adapter() if selected_manager is not None else config.lifecycle_adapter
+        )
+        if lifecycle_adapter is None:
             return 503, {"error": "lifecycle_unavailable"}
         process = await asyncio.create_subprocess_exec(
-            *config.lifecycle_adapter,
+            *lifecycle_adapter,
             action,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -331,7 +403,13 @@ def create_console_app(
             return
         await websocket.accept()
         queue = selected_broker.subscribe()
-        await websocket.send_json({"type": "status", **selected_broker.snapshot()})
+        await websocket.send_json(
+            {
+                "type": "status",
+                **selected_broker.snapshot(),
+                "current_target": selected_manager.snapshot() if selected_manager is not None else None,
+            }
+        )
         history = selected_broker.history.bytes()
         if history:
             await websocket.send_bytes(history)
@@ -349,6 +427,8 @@ def create_console_app(
                             "mcp_write_blocked": event.mcp_write_blocked,
                         }
                     )
+                elif event.kind == "target":
+                    await websocket.send_json({"type": "target", "target": event.target})
 
         sender = asyncio.create_task(forward())
         try:
@@ -395,6 +475,9 @@ def create_console_app(
             Route("/logout", logout),
             Route("/healthz", health),
             Route("/api/state", api_state),
+            Route("/api/targets", api_targets),
+            Route("/api/target/current", api_current_target),
+            Route("/api/target/select", api_select_target, methods=["POST"]),
             Route("/api/vm-stats", api_vm_stats),
             Route("/api/lifecycle/{action}", api_lifecycle, methods=["POST"]),
             WebSocketRoute("/ws/console", websocket_console),
