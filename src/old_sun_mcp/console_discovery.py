@@ -285,7 +285,10 @@ class ConsoleDiscovery:
     async def discover(self) -> DiscoveryReport:
         async def one(host: ConsoleHost) -> tuple[ConsoleHost, tuple[ConsoleTarget, ...] | Exception]:
             try:
-                return host, await self._discover_host(host)
+                return host, await asyncio.wait_for(
+                    self._discover_host(host),
+                    host.discovery_timeout_seconds,
+                )
             except Exception as exc:
                 return host, exc
 
@@ -305,7 +308,10 @@ class ConsoleDiscovery:
         host = self._hosts.get(target.host_id)
         if host is None:
             raise ValueError("stale console target: host is no longer configured")
-        current = await self._discover_host(host)
+        current = await asyncio.wait_for(
+            self._discover_host(host),
+            host.discovery_timeout_seconds,
+        )
         for candidate in current:
             if candidate.target_id == target.target_id:
                 return candidate

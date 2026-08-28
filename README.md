@@ -16,6 +16,13 @@ without turning the normative docs into Friday-night word salad.
 [Codex setup](docs/CODEX-CONFIG.md) covers direct installation on the VM host
 and the SSH stdio path from another machine.
 
+The authenticated browser console can discover live QEMU serial sockets on the
+four current lab hosts, switch the one shared browser/MCP target, and retain the
+human-controlled MCP write block across restarts. Discovery uses Minnie's SSH
+agent and fixed host profiles; guest networking is not involved. See the
+[operator guide](docs/OPERATIONS.md#multi-host-browser-console) and the
+[example host registry](examples/console-hosts-minnie.json).
+
 The point is not to give an agent a polite little remote shell and pretend an
 ancient Solaris guest is a normal cloud VM. The point is to let the agent
 **inhabit the machine** while also giving it the kind of impossible x-ray vision

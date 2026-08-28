@@ -1,0 +1,41 @@
+[
+  {
+    "id": "ec2cicd",
+    "label": "ec2cicd",
+    "platform": "linux",
+    "ssh_target": "root@ec2cicd",
+    "allowed_socket_roots": [
+      "/var/lib/niagara-ci/experiments"
+    ]
+  },
+  {
+    "id": "minnie-2-2",
+    "label": "minnie-2-2",
+    "platform": "darwin",
+    "local": true,
+    "allowed_socket_roots": [
+      "/private/tmp",
+      "/tmp",
+      "/Volumes/T9/ryan-homedir/devel/niagra-qemu-solaris-project"
+    ]
+  },
+  {
+    "id": "niagara-playbox",
+    "label": "niagara-playbox",
+    "platform": "linux",
+    "ssh_target": "niagara@niagara-playbox",
+    "allowed_socket_roots": [
+      "/mnt/disk-images/runs",
+      "/tmp"
+    ]
+  },
+  {
+    "id": "ec2trib",
+    "label": "ec2trib",
+    "platform": "illumos",
+    "ssh_target": "root@ec2trib",
+    "allowed_socket_roots": [
+      "/tink/runs"
+    ]
+  }
+]

@@ -53,3 +53,72 @@ Newer QEMU launchers can configure `monitor_kind = "qmp"` and a run-relative
 `monitor_socket`. The current QMP surface is deliberately small: typed
 `query-status`, plus `stop` and `cont` used only for debugger cleanup. The MCP
 does not expose arbitrary QMP execution.
+
+## Multi-host browser console
+
+The browser console can discover live QEMU serial sockets on a fixed list of
+hosts. Use [the Minnie registry](../examples/console-hosts-minnie.json) as the
+starting configuration. Review its socket roots before starting the service.
+Discovery rejects sockets outside those roots.
+
+Minnie needs non-interactive SSH access to each remote `ssh_target`. The SSH
+agent supplies credentials. Host-key checking uses the machine's existing SSH
+configuration. Remote hosts also need `/bin/sh`, process inspection commands,
+and `/usr/bin/socat`. Nothing is installed or copied to a remote host by the
+console service.
+
+For local development authentication:
+
+```bash
+export OLD_SUN_CONSOLE_HOSTS_JSON="$(<examples/console-hosts-minnie.json)"
+export OLD_SUN_CONSOLE_BIND=127.0.0.1
+export OLD_SUN_CONSOLE_PORT=8876
+export OLD_SUN_CONSOLE_PUBLIC_URL=http://127.0.0.1:8876
+export OLD_SUN_CONSOLE_DEV_AUTH=1
+export OLD_SUN_CONSOLE_MCP_TOKEN="$(openssl rand -hex 32)"
+export OLD_SUN_CONSOLE_SESSION_SECRET="$(openssl rand -hex 32)"
+export OLD_SUN_CONSOLE_STATE=/private/tmp/old-sun-console-state.json
+export OLD_SUN_CONSOLE_CONTROL_SOCKET=/private/tmp/old-sun-console-control.sock
+uv run old-sun-console
+```
+
+Do not set `OLD_SUN_CONSOLE_SOCKET` or `OLD_SUN_CONSOLE_ADAPTER_JSON` when
+`OLD_SUN_CONSOLE_HOSTS_JSON` is set. Those variables remain available for the
+legacy fixed-console configuration.
+
+`GET /api/targets` inspects all configured hosts concurrently. A timeout or SSH
+failure appears under that host's `errors` entry; results from other hosts are
+still returned. Discovery begins with live QEMU processes and validates their
+serial sockets. It does not scan run directories for stale socket files.
+
+The selected target is global. Changing a selector in the browser does nothing
+until Connect is pressed. A successful change clears buffered output from the
+previous guest and updates every browser and MCP client. The service stores the
+host, socket, PID, and process start time. It reconnects after a restart only if
+those fields still identify the same process.
+
+The "Block MCP typing" checkbox persists across browser and service restarts.
+When checked, MCP clients can list targets, inspect the current target, and read
+console output. MCP target changes, console writes, Break, Reset, Power, and
+Start are rejected. Authenticated browser input and browser target selection
+remain available.
+
+The MCP process connects through the authenticated control socket. Configure
+that socket in `.old-sun-mcp.toml`:
+
+```toml
+[console_control]
+socket = "/private/tmp/old-sun-console-control.sock"
+run = "multi-host-lab"
+token_env = "OLD_SUN_CONSOLE_MCP_TOKEN"
+timeout_seconds = 8
+```
+
+`guest.console_targets` returns discovered targets, host errors, and the active
+target. `guest.console_select_target` requires an opaque target ID from that
+result and a non-empty reason.
+
+Lifecycle buttons require a `lifecycle_argv` in the selected host entry. The
+adapter receives one final argument: `break`, `reset`, `powerdown`, `start`, or
+`status`. Leave the field absent until the adapter is specific to that host and
+tested against the intended QEMU process.

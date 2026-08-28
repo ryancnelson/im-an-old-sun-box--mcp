@@ -200,6 +200,24 @@ async def test_discovery_reports_timeout_without_losing_other_hosts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_discovery_timeout_bounds_enumeration_and_socket_checks_together() -> None:
+    async def runner(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
+        if b"OLD_SUN_DISCOVERY_V1" in stdin:
+            records = b"".join(
+                f"{pid}\tstart-{pid}\tqemu-system-sparc64 -serial unix:/runs/{pid}.sock\n".encode()
+                for pid in range(1, 20)
+            )
+            return CommandResult(0, records, b"")
+        await asyncio.sleep(0.01)
+        return CommandResult(0, b"100.0\n", b"")
+
+    report = await ConsoleDiscovery((_host("busy", timeout=0.03),), runner=runner).discover()
+
+    assert report.targets == ()
+    assert report.errors["busy"].kind == "timeout"
+
+
+@pytest.mark.asyncio
 async def test_revalidation_rejects_changed_process_identity() -> None:
     phase = 0
 
