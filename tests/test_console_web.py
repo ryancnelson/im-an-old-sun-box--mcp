@@ -1,6 +1,7 @@
 from pathlib import Path
 from pathlib import PurePosixPath
 import tempfile
+from dataclasses import replace
 
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -8,7 +9,7 @@ import pytest
 
 from old_sun_mcp.console_auth import GitHubIdentity
 from old_sun_mcp.console_broker import ConsoleBroker
-from old_sun_mcp.console_discovery import ConsoleTarget, DiscoveryError, DiscoveryReport
+from old_sun_mcp.console_discovery import ConsoleHost, ConsoleTarget, DiscoveryError, DiscoveryReport
 from old_sun_mcp.console_state import OperatorState
 from old_sun_mcp.console_transport import UnixConsoleConnector
 from old_sun_mcp.console_web import ConsoleWebConfig, create_console_app
@@ -157,7 +158,13 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
 
 
 def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:
-    selected = config(tmp_path, development=True)
+    selected = replace(
+        config(tmp_path, development=True),
+        hosts=(
+            ConsoleHost("ec2cicd", "ec2cicd", "linux", "root@ec2cicd", (PurePosixPath("/runs"),)),
+            ConsoleHost("ec2trib", "ec2trib", "illumos", "root@ec2trib", (PurePosixPath("/tink/runs"),)),
+        ),
+    )
     state = OperatorState(selected.state_path)
     state.load()
     broker = ConsoleBroker(selected.transport, state)
@@ -169,6 +176,7 @@ def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:
         listing = client.get("/api/targets")
         assert listing.status_code == 200
         assert listing.json()["targets"][0]["host_id"] == "ec2cicd"
+        assert [host["host_id"] for host in listing.json()["hosts"]] == ["ec2cicd", "ec2trib"]
         assert listing.json()["errors"]["ec2trib"]["kind"] == "timeout"
         assert client.get("/api/target/current").json()["target"] is None
 
@@ -181,7 +189,7 @@ def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:
         connected = client.post(
             "/api/target/select",
             json={"target_id": manager.target.target_id},
-            headers={"origin": selected.public_url},
+            headers={"origin": selected.public_url, "x-old-sun-csrf": "1"},
         )
         assert connected.status_code == 200
         assert connected.json()["target"]["pid"] == 343827
@@ -189,17 +197,31 @@ def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:
         assert client.post(
             "/api/target/select",
             json={"target_id": "stale"},
-            headers={"origin": selected.public_url},
+            headers={"origin": selected.public_url, "x-old-sun-csrf": "1"},
         ).status_code == 409
         assert client.post(
             "/api/target/select",
             json={"target_id": "missing"},
-            headers={"origin": selected.public_url},
+            headers={"origin": selected.public_url, "x-old-sun-csrf": "1"},
         ).status_code == 404
         assert client.post(
             "/api/lifecycle/reset",
-            headers={"origin": selected.public_url},
+            headers={"origin": selected.public_url, "x-old-sun-csrf": "1"},
         ).status_code == 503
+
+        missing_origin = client.post(
+            "/api/target/select",
+            json={"target_id": manager.target.target_id},
+            headers={"x-old-sun-csrf": "1"},
+        )
+        assert missing_origin.status_code == 200
+        assert client.post(
+            "/api/target/select",
+            json={"target_id": manager.target.target_id},
+        ).status_code == 403
+
+        app_javascript = client.get("/static/app.js").text
+        assert '"X-Old-Sun-CSRF": "1"' in app_javascript
 
 
 def test_websocket_rejects_missing_session(tmp_path) -> None:

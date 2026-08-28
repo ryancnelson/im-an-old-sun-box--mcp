@@ -155,6 +155,18 @@ def _authenticated(scope: dict[str, Any]) -> bool:
     return isinstance(user, dict) and isinstance(user.get("id"), int) and isinstance(user.get("login"), str)
 
 
+def _browser_mutation_allowed(request: Request, config: ConsoleWebConfig) -> bool:
+    if request.headers.get("x-old-sun-csrf") != "1":
+        return False
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    allowed_origins = {config.public_url}
+    if config.development_auth:
+        allowed_origins.add(f"{request.url.scheme}://{request.url.netloc}")
+    return origin in allowed_origins
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -311,10 +323,22 @@ def create_console_app(
         if not _authenticated(request.scope):
             return JSONResponse({"error": "authentication_required"}, status_code=401)
         if selected_manager is None:
-            return JSONResponse({"targets": [], "errors": {}})
+            return JSONResponse({"hosts": [], "targets": [], "errors": {}})
         report: DiscoveryReport = await selected_manager.discover()
+        target_counts: dict[str, int] = {}
+        for target in report.targets:
+            target_counts[target.host_id] = target_counts.get(target.host_id, 0) + 1
         return JSONResponse(
             {
+                "hosts": [
+                    {
+                        "host_id": host.host_id,
+                        "label": host.label,
+                        "platform": host.platform,
+                        "target_count": target_counts.get(host.host_id, 0),
+                    }
+                    for host in config.hosts
+                ],
                 "targets": [_target_payload(target) for target in report.targets],
                 "errors": {host_id: asdict(error) for host_id, error in report.errors.items()},
             }
@@ -328,7 +352,7 @@ def create_console_app(
     async def api_select_target(request: Request) -> Response:
         if not _authenticated(request.scope):
             return JSONResponse({"error": "authentication_required"}, status_code=401)
-        if request.headers.get("origin") != config.public_url:
+        if not _browser_mutation_allowed(request, config):
             return JSONResponse({"error": "origin_rejected"}, status_code=403)
         if selected_manager is None:
             return JSONResponse({"error": "target_discovery_unavailable"}, status_code=503)
@@ -389,7 +413,7 @@ def create_console_app(
     async def api_lifecycle(request: Request) -> Response:
         if not _authenticated(request.scope):
             return JSONResponse({"error": "authentication_required"}, status_code=401)
-        if request.headers.get("origin") != config.public_url:
+        if not _browser_mutation_allowed(request, config):
             return JSONResponse({"error": "origin_rejected"}, status_code=403)
         action = request.path_params["action"]
         if action not in {"break", "reset", "powerdown", "start"}:

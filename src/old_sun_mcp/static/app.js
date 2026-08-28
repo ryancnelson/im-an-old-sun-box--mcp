@@ -93,6 +93,14 @@ const populateConsoles = () => {
     option.textContent = `${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.socket_path}`;
     consoleSelect.append(option);
   });
+  if (consoleSelect.options.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No live QEMU consoles";
+    option.disabled = true;
+    option.selected = true;
+    consoleSelect.append(option);
+  }
   if ([...consoleSelect.options].some((option) => option.value === selected)) consoleSelect.value = selected;
   connectTarget.disabled = !consoleSelect.value;
 };
@@ -106,10 +114,11 @@ const loadTargets = async () => {
     targets = payload.targets;
     const selectedHost = hostSelect.value || currentTarget?.host_id;
     hostSelect.replaceChildren();
-    [...new Set(targets.map((target) => target.host_id))].forEach((hostId) => {
+    const hosts = payload.hosts || [...new Set(targets.map((target) => target.host_id))].map((hostId) => ({ host_id: hostId, label: hostId }));
+    hosts.forEach((host) => {
       const option = document.createElement("option");
-      option.value = hostId;
-      option.textContent = hostId;
+      option.value = host.host_id;
+      option.textContent = `${host.label}${host.target_count === 0 ? " · no live console" : ""}`;
       hostSelect.append(option);
     });
     if ([...hostSelect.options].some((option) => option.value === selectedHost)) hostSelect.value = selectedHost;
@@ -133,7 +142,7 @@ connectTarget.addEventListener("click", async () => {
   try {
     const response = await fetch("/api/target/select", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Old-Sun-CSRF": "1" },
       body: JSON.stringify({ target_id: consoleSelect.value }),
     });
     const payload = await response.json();
@@ -151,7 +160,10 @@ document.querySelectorAll("button[data-action]").forEach((button) => {
     if (["reset", "powerdown"].includes(action) && !window.confirm(`${button.textContent}?`)) return;
     button.disabled = true;
     try {
-      const response = await fetch(`/api/lifecycle/${action}`, { method: "POST" });
+      const response = await fetch(`/api/lifecycle/${action}`, {
+        method: "POST",
+        headers: { "X-Old-Sun-CSRF": "1" },
+      });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error_output || result.error || `HTTP ${response.status}`);
       terminal.write(`\r\n[vm control: ${action} accepted]\r\n`);
