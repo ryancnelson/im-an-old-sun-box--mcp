@@ -7,6 +7,7 @@ build/
 *.egg-info/
 .old-sun-evidence/
 .old-sun-mcp.toml
+worktrees/
 
 # Lab runtime artifacts never belong in source control.
 *.pid
