@@ -13,6 +13,8 @@ def test_bounded_history_retains_only_tail() -> None:
     history.append(b"abc")
     history.append(b"defg")
     assert history.bytes() == b"cdefg"
+    history.clear()
+    assert history.bytes() == b""
 
 
 @pytest.mark.asyncio
@@ -54,4 +56,53 @@ async def test_broker_reads_reconnects_and_enforces_actor_policy(tmp_path) -> No
     await broker.stop()
     server.close()
     await server.wait_closed()
+    socket_dir.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_broker_replaces_transport_without_losing_subscribers(tmp_path) -> None:
+    socket_dir = tempfile.TemporaryDirectory(prefix="osc-switch-", dir="/tmp")
+    first_path = Path(socket_dir.name) / "first.sock"
+    second_path = Path(socket_dir.name) / "second.sock"
+
+    async def first(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        writer.write(b"first")
+        await writer.drain()
+        await reader.read()
+
+    async def second(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        writer.write(b"second")
+        await writer.drain()
+        await reader.read()
+
+    first_server = await asyncio.start_unix_server(first, path=str(first_path))
+    second_server = await asyncio.start_unix_server(second, path=str(second_path))
+    broker = ConsoleBroker(first_path, OperatorState(tmp_path / "state.json"), retry_seconds=0.01)
+    queue = broker.subscribe()
+    await broker.start()
+    for _ in range(100):
+        if broker.history.bytes() == b"first":
+            break
+        await asyncio.sleep(0.01)
+
+    await broker.replace_transport(second_path)
+    for _ in range(100):
+        if broker.history.bytes() == b"second":
+            break
+        await asyncio.sleep(0.01)
+
+    assert broker.history.bytes() == b"second"
+    statuses = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event.kind == "status":
+            statuses.append(event.connected)
+    assert False in statuses
+    assert statuses[-1] is True
+
+    await broker.stop()
+    first_server.close()
+    second_server.close()
+    await first_server.wait_closed()
+    await second_server.wait_closed()
     socket_dir.cleanup()

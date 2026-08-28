@@ -35,6 +35,9 @@ class BoundedHistory:
     def bytes(self) -> bytes:
         return bytes(self._data)
 
+    def clear(self) -> None:
+        self._data.clear()
+
 
 @dataclass(frozen=True)
 class ConsoleEvent:
@@ -42,12 +45,13 @@ class ConsoleEvent:
     data: bytes | None = None
     connected: bool | None = None
     mcp_write_blocked: bool | None = None
+    target: dict[str, object] | None = None
 
 
 class ConsoleBroker:
     def __init__(
         self,
-        transport: ConsoleConnector | Path,
+        transport: ConsoleConnector | Path | None,
         state: OperatorState,
         *,
         history_bytes: int = 262_144,
@@ -62,6 +66,7 @@ class ConsoleBroker:
         self.connected = False
         self._writer: asyncio.StreamWriter | None = None
         self._write_lock = asyncio.Lock()
+        self._replace_lock = asyncio.Lock()
         self._subscribers: set[asyncio.Queue[ConsoleEvent]] = set()
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
@@ -74,6 +79,10 @@ class ConsoleBroker:
 
     async def stop(self) -> None:
         self._stopping.set()
+        await self._stop_connect_loop()
+        self._set_connection(None)
+
+    async def _stop_connect_loop(self) -> None:
         if self._writer is not None:
             self._writer.close()
         if self._task is not None:
@@ -83,7 +92,22 @@ class ConsoleBroker:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        self._set_connection(None)
+
+    async def replace_transport(self, transport: ConsoleConnector | Path | None, *, clear_history: bool = True) -> None:
+        replacement = UnixConsoleConnector(transport) if isinstance(transport, Path) else transport
+        async with self._replace_lock:
+            running = self._task is not None
+            await self._stop_connect_loop()
+            self._set_connection(None)
+            self.transport = replacement
+            if clear_history:
+                self.history.clear()
+            if running:
+                self._stopping.clear()
+                self._task = asyncio.create_task(self._connect_loop(), name="qemu-console-broker")
+
+    def broadcast_target(self, target: dict[str, object] | None) -> None:
+        self._broadcast(ConsoleEvent("target", target=target))
 
     def snapshot(self) -> dict[str, object]:
         return {
@@ -124,6 +148,8 @@ class ConsoleBroker:
         while not self._stopping.is_set():
             endpoint: ConsoleEndpoint | None = None
             try:
+                if self.transport is None:
+                    raise FileNotFoundError("no console target is selected")
                 endpoint = await self.transport.connect()
                 self._set_connection(endpoint.writer)
                 while data := await endpoint.reader.read(4096):
