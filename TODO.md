@@ -17,6 +17,30 @@ Only one entry may be `active` for a given branch. Never delete completed or
 declined IDs; move them to History so old commits and discussions still make
 sense.
 
+## Active
+
+### SUN-011 — Shared serial console for humans and MCP
+
+- **Status:** active
+- **Branch:** `codex/remote-console-broker`
+- **SPEC:** Sections 8.17–8.23, 9.1, 10, and 11
+- **Validation:**
+  `docs/live-validation/2026-08-28-console-broker.md`
+- **Why:** QEMU's serial socket has one consumer. A human web terminal and MCP
+  must share one transcript and one input arbiter instead of racing for bytes.
+- **Proved:** The pure-Python console runtime installs on Tribblix. The broker,
+  authenticated RPC, lease, write, expect, read, release, and installed web
+  health path work against the live `oi-basecamp` OpenBoot console without
+  stopping QEMU.
+- **Remaining:** Choose the public HTTPS hostname; create the GitHub OAuth app;
+  provision OAuth, session, and broker secrets; install nginx and SMF; then
+  prove browser input, Ryan-only admission, checkbox persistence, MCP access
+  from Codex, reconnect behavior, and QMP status.
+- **Acceptance:** One broker remains the sole QEMU serial client; the human can
+  always type; human input outranks queued MCP input; the persistent checkbox
+  immediately blocks MCP writes while reads continue; only GitHub account ID
+  `347171` can use the browser; and every remaining live check is recorded.
+
 ## Ready
 
 ### SUN-003 — Add the first live host trace recipe

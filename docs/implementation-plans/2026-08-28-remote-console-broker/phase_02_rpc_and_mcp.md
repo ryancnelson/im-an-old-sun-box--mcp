@@ -1,5 +1,7 @@
 # Phase 2: RPC and MCP tools
 
+**Status:** complete
+
 ## Tasks
 
 1. Add authenticated JSON-lines RPC tests for status, read, lease lifecycle,

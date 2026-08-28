@@ -155,6 +155,7 @@ The intended tool families are explicit about the layer they operate on:
 ```text
 lab.*          run discovery, intent, health, and manifests
 guest.*        bounded guest commands, console evidence, and DTrace
+console.*      shared serial transcript, leases, input, keys, and expect
 qemu.*         HMP/QMP queries and deliberate machine control
 debugger.*     SPARC register, instruction, memory, and backtrace capture
 host.trace.*   bounded eBPF/perf/process investigations
@@ -176,16 +177,30 @@ across the virtualization boundary, now we're cooking.
 
 ## Status
 
-**The portable 0.1 core is implemented, and the first live profile is proven.**
+**The portable 0.1 core and the shared-console control plane are implemented.**
 Strict configuration, validated run identity, guest/HMP/QMP/host adapters,
-immutable evidence and hypothesis history, and the MCP stdio server are covered
-by 58 tests. CI runs the portable suite on macOS and Linux.
+immutable evidence and hypothesis history, the MCP stdio server, and the
+console broker are covered by 80 tests. CI runs the portable suite on macOS and
+Linux.
 
 The Niagara profile has also been exercised against a live QEMU 10.2 run. It
 proved the exact PID, queried QMP over a private Unix socket, captured SPARC v9
 registers and instructions with `gdb-multiarch`, detached, and independently
 proved that QEMU returned to `running`. A fresh Codex CLI on the VM host then
 discovered the run and queried its status using only MCP tools.
+
+The console broker has now been installed on Tribblix and attached to the live
+`oi-basecamp` OpenBoot console. An authenticated RPC client acquired a lease,
+sent `printenv auto-boot?`, matched the next prompt, read the response, released
+the lease, and detached without stopping QEMU. The installed web entry point
+also started on loopback and reported a connected console. The exact check is
+recorded in
+[the live validation note](docs/live-validation/2026-08-28-console-broker.md).
+
+The public browser service is not deployed yet. It still needs a hostname,
+TLS, a GitHub OAuth application, and write-capable Doppler provisioning. Until
+those exist, the repository does not claim that nginx, SMF, OAuth, browser
+typing, or the persistent human lock has passed a live check.
 
 Guest DTrace recipes, named host eBPF/perf recipes, the project semantic
 classifier, content-addressed diagnostic captures, and automatic wedge rollover

@@ -1,5 +1,7 @@
 # Phase 1: broker core
 
+**Status:** complete
+
 ## Tasks
 
 1. Add fake-console tests for transcript cursors, reconnect state, bounded

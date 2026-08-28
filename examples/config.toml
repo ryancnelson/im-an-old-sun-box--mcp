@@ -11,6 +11,11 @@ console_log = "console.log"
 monitor_kind = "hmp"
 monitor_socket = "monitor.sock"
 
+[console]
+rpc_socket = "/srv/old-sun-lab/state/console-broker.sock"
+token_env = "OLD_SUN_CONSOLE_MCP_TOKEN"
+run = "demo"
+
 [paths]
 classifier = "/opt/old-sun-lab/bin/classify-vm"
 gdb = "/opt/cross/bin/sparc64-unknown-elf-gdb"

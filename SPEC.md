@@ -2,7 +2,7 @@
 
 **Version:** 0.1.0-draft  
 **Status:** Normative implementation contract  
-**Date:** 2026-08-27
+**Date:** 2026-08-28
 
 ## 1. Purpose
 
@@ -79,6 +79,32 @@ I'm an Old Sun Box MCP
 An optional relay MAY carry MCP or backend requests between Ryan's primary Mac
 and the VM host. A relay MUST preserve the same tool schemas and evidence
 envelopes. The guest network MUST NOT be used as that relay.
+
+### 3.1 Shared serial console
+
+A QEMU serial Unix socket is a single-consumer channel. When browser and MCP
+access are enabled, one broker process MUST be the sole QEMU serial client.
+Browsers MUST use its authenticated WebSocket, and MCP MUST use its private
+authenticated Unix RPC socket.
+
+```text
+QEMU console.sock
+        |
+        v
+console broker
+  |-- bounded binary transcript with absolute cursors
+  |-- persistent human-owned MCP-write policy
+  |-- human-priority input queue
+  |-- authenticated browser WebSocket
+  `-- bearer-authenticated Unix RPC
+                         |
+                         v
+                    console.* tools
+```
+
+The broker MUST NOT start, stop, reset, or otherwise manage QEMU. Serial
+disconnect MUST leave the web and RPC services available, report the console
+offline, and retry with a bounded interval.
 
 ## 4. Run identity and discovery
 
@@ -282,8 +308,9 @@ guest or mutate classifier state.
 
 ### 8.2 `lab.describe_run`
 
-**Mutation:** `observe`  
-**Input:** `run`  
+**Mutation:** `observe`
+
+**Input:** `run`
 **Output data:** sanitized manifest, resolved capabilities, artifact metadata,
 and exact PID-verification status.
 
@@ -335,8 +362,9 @@ Requirements:
 
 ### 8.6 `qemu.status`
 
-**Mutation:** `observe`  
-**Input:** `run`  
+**Mutation:** `observe`
+
+**Input:** `run`
 **Output data:** PID identity, process existence, monitor kind and availability,
 and an HMP `info status` or QMP `query-status` result.
 
@@ -444,6 +472,80 @@ and `reason`
 Updates MUST NOT overwrite earlier events. `falsified` requires at least one
 evidence ID. `supported` is not equivalent to proved.
 
+### 8.17 `console.status`
+
+**Mutation:** `observe`
+
+**Input:** `run`
+**Output data:** connection state, absolute transcript cursors, pending input
+count, human-client count, persistent policy, active MCP lease, and the last
+connection error.
+
+### 8.18 `console.read`
+
+**Mutation:** `observe`
+
+**Input:** `run`, optional `after_cursor` and `max_bytes`
+**Output data:** bounded binary-safe data, decoded replacement text,
+`base_cursor`, `next_cursor`, `end_cursor`, and gap/truncation flags.
+
+Transcript cursors MUST remain monotonic when old bytes are compacted. A reader
+whose cursor predates retained data MUST receive `gap=true`, not silently
+mistake the retained prefix for the requested position.
+
+### 8.19 `console.acquire`
+
+**Mutation:** `reversible`
+
+**Input:** `run`, `owner`, `reason`, and bounded `ttl_seconds`
+**Output data:** opaque lease ID, owner, reason, and remaining lifetime.
+
+Only one MCP writer lease may exist. A lease does not exclude human input and
+MUST expire automatically. Broker restart MUST invalidate all leases.
+
+### 8.20 `console.write`
+
+**Mutation:** `disruptive`
+
+**Input:** `run`, `lease_id`, binary-safe `data`, and required `reason`
+**Output data:** queued byte count, source priority, and cursor at queue time.
+
+The broker MUST verify the current lease and persistent policy when the write
+is queued. Human input MUST remain accepted and MUST outrank MCP chunks that
+have not begun writing. A blocked write MUST return `CONSOLE_POLICY_BLOCKED`
+with the public policy state.
+
+### 8.21 `console.send_key`
+
+**Mutation:** `disruptive`
+
+**Input:** `run`, `lease_id`, reviewed key name, and required `reason`
+**Output data:** the accepted key name and queue metadata.
+
+The initial allowlist is Ctrl-C, Ctrl-D, Enter, Escape, and Tab. Arbitrary key
+names MUST be rejected.
+
+### 8.22 `console.expect`
+
+**Mutation:** `observe`
+
+**Input:** `run`, UTF-8 `pattern`, `after_cursor`, and bounded
+`timeout_seconds`
+**Output data:** match state, match-ending cursor, and the bounded bytes read.
+
+Expect MUST continue to work while MCP writes are blocked. A timeout returns
+`SOCKET_TIMEOUT` and the last examined cursor.
+
+### 8.23 `console.release`
+
+**Mutation:** `reversible`
+
+**Input:** `run`, `lease_id`
+**Output data:** whether that lease was released.
+
+Release MUST be idempotent. Closing an MCP connection does not release a lease;
+the holder releases it explicitly or waits for expiry.
+
 ## 9. MCP server behavior
 
 - The implementation language is Python 3.11 or newer.
@@ -458,6 +560,28 @@ evidence ID. `supported` is not equivalent to proved.
   `PRIVILEGE_REQUIRED` with the exact missing capability or configured command.
 - The server MUST NOT attempt password prompts, interactive sudo, or secret
   discovery.
+
+### 9.1 Console broker and browser service
+
+The broker RPC MUST use one size-bounded JSON object per line over a mode-0600
+Unix socket. Every request MUST contain a request ID, method, parameters, and a
+bearer token. The broker MUST compare tokens in constant time and MUST NOT place
+them in transcripts, evidence envelopes, or logs.
+
+The browser service MUST bind to loopback behind a TLS reverse proxy in the
+deployed profile. It MUST use GitHub's authorization-code flow and admit only
+the configured stable numeric GitHub account ID. A configured login match MAY
+be required as a second check but MUST NOT replace the numeric ID.
+
+Browser sessions and OAuth state MUST be signed, expiring, HTTP-only cookies.
+Deployed cookies MUST be `Secure` and `SameSite=Lax`. Policy changes require an
+authenticated session and an exact allowed Origin. The console WebSocket MUST
+perform the same session and Origin checks before acceptance.
+
+The browser MUST display the connection state, run identity, current lease,
+and persistent policy. Its `Block MCP keyboard input` control is human-owned.
+The checked state MUST survive browser disconnect, broker restart, and VM
+restart. Browser input remains enabled while MCP input is blocked.
 
 ## 10. Security boundaries
 
@@ -478,6 +602,15 @@ evidence ID. `supported` is not equivalent to proved.
 9. The QEMU monitor MUST remain bound to a Unix socket or loopback interface.
 10. A GDB TCP listener MUST bind to loopback unless the operator explicitly
    configures another protected transport.
+11. Exactly one broker MAY connect to a configured live serial socket. Other
+   readers use the broker transcript or a separate QEMU log sink.
+12. Console input audit records MUST contain source, reason, byte count, time,
+   and a digest. They MUST NOT contain the input bytes.
+13. A missing policy file MAY use the documented default. An unreadable,
+   malformed, or invalid policy file MUST fail closed for MCP writes.
+14. OAuth client secrets, session keys, and broker bearer tokens MUST arrive
+   through the process environment or an external secret provider. They MUST
+   NOT be stored in TOML, deployment templates, or the repository.
 
 ## 11. Persistence and concurrency
 
@@ -490,6 +623,12 @@ evidence ID. `supported` is not equivalent to proved.
 - Concurrent observational calls are permitted.
 - Calls that share an interactive guest adapter, HMP socket, debugger, or trace
   target MUST serialize per run and resource.
+- Console output MUST be appended to the bounded transcript before fanout.
+  Compaction MUST persist the new absolute base cursor atomically.
+- Console policy updates MUST use write, fsync, and atomic rename. A successful
+  response MUST mean the new policy is durable.
+- The serial input queue MUST preserve order within each priority class. Human
+  chunks have higher priority than queued MCP chunks.
 
 ## 12. Logging
 
@@ -510,12 +649,20 @@ them sensitive.
 The repository MUST provide:
 
 - `pyproject.toml` with an `old-sun-mcp` console entry point;
+- an `old-sun-console` broker/web entry point;
 - Python package `old_sun_mcp`;
 - example TOML configuration without private paths or secrets;
 - unit tests requiring no live VM, root, network, or destructive disk;
 - opt-in live smoke-test documentation;
 - Codex configuration example for a stdio MCP server; and
 - operator documentation for capability and privilege setup.
+
+The base wheel SHOULD avoid dependencies so host-side broker code can be
+imported on unusual Python platforms. The `console` extra MUST remain
+installable on the target Tribblix Python without a Rust toolchain. The `mcp`
+extra contains the official MCP SDK. Development and CI use the `test` extra.
+Pinned browser assets and their licenses MUST be included in the wheel; the
+deployed console MUST NOT require a CDN or Node.js.
 
 ## 14. Conformance tests
 
@@ -541,6 +688,15 @@ The automated suite MUST prove:
 11. MCP server startup and tool enumeration over stdio.
 12. Existing tests leave no child processes, Unix sockets, or modified fixture
     state behind.
+13. Console transcript cursors, compaction gaps, reconnect, bounded input,
+    human priority, policy persistence, and fail-closed policy parsing.
+14. Console RPC authentication, request bounds, lease lifecycle, blocked
+    writes, reviewed keys, read, expect, and timeout behavior.
+15. GitHub OAuth state and numeric-ID admission with a fake OAuth client,
+    authenticated policy changes, Origin checks, and WebSocket admission.
+16. The wheel contains the local browser assets, and the Tribblix `console`
+    dependency set excludes FastAPI, Pydantic, the MCP SDK, and native build
+    requirements.
 
 ## 15. Initial implementation boundary
 
@@ -561,7 +717,17 @@ is proven. Their interfaces are reserved by this SPEC but require host-specific
 validation before being claimed as working. `qemu.status` MAY use the typed QMP
 `query-status` command when the run profile selects QMP.
 
-### 15.1 Wedge rollover direction
+### 15.1 Shared-console extension
+
+The console extension delivers the single-owner broker, durable transcript and
+policy, authenticated RPC, seven `console.*` tools, GitHub-authenticated web
+client, local xterm.js assets, and Tribblix deployment templates. Automated
+conformance does not prove the public deployment. The README and live
+validation notes MUST distinguish local or smoke-tested behavior from OAuth,
+TLS, reverse-proxy, service-manager, and browser behavior proved in the live
+environment.
+
+### 15.2 Wedge rollover direction
 
 A future lifecycle workflow SHOULD treat a wedged VM as an evidence source,
 not as the only machine available for continued work. Its transaction is:

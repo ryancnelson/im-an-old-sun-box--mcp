@@ -1,5 +1,7 @@
 # Phase 5: documentation and release
 
+**Status:** in progress
+
 ## Tasks
 
 1. Update `SPEC.md` with the broker, policy, RPC, authentication, and console

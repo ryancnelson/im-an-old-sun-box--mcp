@@ -1,6 +1,6 @@
 # Remote console broker and web client
 
-**Status:** approved for implementation
+**Status:** implemented; public deployment validation remains
 
 **Date:** 2026-08-28
 

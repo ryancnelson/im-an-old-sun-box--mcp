@@ -1,10 +1,12 @@
 # Phase 3: authenticated web client
 
+**Status:** complete in automated tests
+
 ## Tasks
 
 1. Add session-signing and GitHub OAuth admission tests with a fake OAuth
    client.
-2. Implement the FastAPI application, OAuth routes, policy endpoint, and
+2. Implement the Starlette application, OAuth routes, policy endpoint, and
    authenticated console WebSocket in `src/old_sun_mcp/console_web.py`.
 3. Add a Python entry point that starts the broker and ASGI server together.
 4. Vendor pinned xterm.js and fit-addon assets. Add the terminal HTML,

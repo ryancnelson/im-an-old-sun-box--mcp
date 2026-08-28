@@ -1,5 +1,7 @@
 # Phase 4: Tribblix deployment
 
+**Status:** runtime and live RPC proved; public deployment remains
+
 ## Tasks
 
 1. Add an `ec2trib` configuration example for `/tink/runs`, QMP, broker RPC,
@@ -17,3 +19,8 @@
 
 The broker owns the live serial socket, artifacts remain run-scoped, and both
 human and MCP clients pass the acceptance checks.
+
+The 2026-08-28 live check proved installation, broker ownership, authenticated
+RPC write/read/expect/release, and the installed loopback web health route.
+GitHub OAuth, browser input, nginx, SMF, policy persistence, and permanent MCP
+credentials remain before this phase is complete.
