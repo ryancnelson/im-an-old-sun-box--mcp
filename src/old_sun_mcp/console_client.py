@@ -17,6 +17,9 @@ ERROR_CODES = {
     "lifecycle_unavailable": "ADAPTER_UNAVAILABLE",
     "lifecycle_timeout": "TIMEOUT",
     "lifecycle_failed": "VM_CONTROL_FAILED",
+    "target_stale": "CONSOLE_TARGET_STALE",
+    "target_not_found": "CONSOLE_TARGET_NOT_FOUND",
+    "target_discovery_unavailable": "ADAPTER_UNAVAILABLE",
 }
 
 
@@ -66,6 +69,7 @@ def control_request(
             {
                 "connected": response.get("connected"),
                 "mcp_write_blocked": response.get("mcp_write_blocked"),
+                "current_target": response.get("current_target"),
             },
         )
     response.pop("ok", None)

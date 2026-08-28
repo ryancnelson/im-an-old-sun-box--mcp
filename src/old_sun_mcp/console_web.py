@@ -225,6 +225,7 @@ def create_console_app(
         config.mcp_token,
         selected_broker,
         lifecycle_adapter=config.lifecycle_adapter,
+        target_manager=selected_manager,
     )
     selected_oauth = oauth or GitHubOAuth(
         config.github_client_id,

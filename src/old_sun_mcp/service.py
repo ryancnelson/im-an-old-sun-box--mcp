@@ -82,6 +82,38 @@ class OldSunService:
             action=lambda: self._console_control(run, "status")[1],
         )
 
+    def guest_console_targets(self, run: str | None = None) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        return self._call(
+            layer="guest",
+            operation="guest.console_targets",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured control socket"},
+            mutation="observe",
+            action=lambda: self._console_control(run, "list_targets")[1],
+        )
+
+    def guest_console_select_target(self, target_id: str, *, reason: str, run: str | None = None) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        def action() -> Any:
+            self._reason(reason)
+            if not target_id:
+                raise OldSunError("INVALID_ARGUMENT", "target_id is required")
+            return self._console_control(
+                run,
+                "select_target",
+                target_id=target_id,
+                reason=reason,
+            )[1]
+        return self._call(
+            layer="guest",
+            operation="guest.console_select_target",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured control socket"},
+            mutation="disruptive",
+            action=action,
+        )
+
     def guest_console_read(self, run: str | None = None, max_bytes: int | None = None) -> dict[str, Any]:
         selected_run = run or (self.config.console_control.run if self.config.console_control else None)
         def action() -> Any:

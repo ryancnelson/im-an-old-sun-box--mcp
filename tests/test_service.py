@@ -47,3 +47,23 @@ def test_guest_exec_requires_reason() -> None:
 def test_hmp_stop_is_declared_reversible_before_execution() -> None:
     result = OldSunService(Config()).qemu_hmp_control("demo", "stop", reason="inspect")
     assert result["mutation"] == "reversible"
+
+
+def test_console_target_service_methods(monkeypatch) -> None:
+    calls = []
+
+    def fake_request(socket_path, token, request, **kwargs):
+        calls.append(request)
+        return {"current_target": None, "targets": []}
+
+    from old_sun_mcp.config import ConsoleControlConfig
+    monkeypatch.setattr("old_sun_mcp.service.control_request", fake_request)
+    monkeypatch.setenv("OLD_SUN_CONSOLE_MCP_TOKEN", "token")
+    service = OldSunService(Config(console_control=ConsoleControlConfig(Path("/tmp/control.sock"), "lab")))
+
+    assert service.guest_console_targets()["ok"] is True
+    assert service.guest_console_select_target("opaque-id", reason="inspect guest")["ok"] is True
+    assert calls == [
+        {"operation": "list_targets"},
+        {"operation": "select_target", "target_id": "opaque-id", "reason": "inspect guest"},
+    ]

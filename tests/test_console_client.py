@@ -48,3 +48,17 @@ def test_control_client_maps_write_block_to_typed_error() -> None:
         thread.join(1)
     assert caught.value.code == "CONSOLE_WRITE_BLOCKED"
     assert caught.value.details["mcp_write_blocked"] is True
+
+
+@pytest.mark.parametrize(
+    "wire_error, expected",
+    [("target_stale", "CONSOLE_TARGET_STALE"), ("target_not_found", "CONSOLE_TARGET_NOT_FOUND")],
+)
+def test_control_client_maps_target_errors(wire_error: str, expected: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="osc-", dir="/tmp") as directory:
+        path = Path(directory) / "control.sock"
+        thread = serve_once(path, {"ok": False, "error": wire_error, "current_target": None})
+        with pytest.raises(OldSunError) as caught:
+            control_request(str(path), "token", {"operation": "select_target"}, timeout_seconds=1, max_bytes=4096)
+        thread.join(1)
+    assert caught.value.code == expected
