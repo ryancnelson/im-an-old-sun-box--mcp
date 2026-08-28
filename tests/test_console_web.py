@@ -71,6 +71,11 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
         assert client.get("/api/state").json()["mcp_write_blocked"] is True
         assert client.get("/static/xterm.js").status_code == 200
         assert response.headers["content-security-policy"].startswith("default-src 'self'")
+        app_javascript = client.get("/static/app.js").text
+        stylesheet = client.get("/static/ui.css").text
+        assert "Liberation Mono" in app_javascript
+        assert "Gallant12" not in app_javascript
+        assert "Gallant12" not in stylesheet
         with client.websocket_connect(
             "ws://127.0.0.1:8765/ws/console",
             headers={"origin": selected.public_url},

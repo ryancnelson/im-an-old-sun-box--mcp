@@ -1,23 +1,18 @@
-const gallantLineHeight = navigator.userAgent.includes("Firefox/") ? 22 / 12 : 1;
-
 const terminal = new Terminal({
   convertEol: true,
   cursorBlink: false,
   cursorStyle: "block",
   cursorInactiveStyle: "block",
-  fontFamily: "Gallant12, Menlo, Monaco, Consolas, monospace",
+  fontFamily: "Menlo, Monaco, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace",
   fontSize: 16,
   fontWeight: "400",
   letterSpacing: 0,
-  // Firefox honors Gallant's embedded 12x22 bitmap strike literally, while
-  // Chromium derives a 12px CSS line box. Compensate only in Firefox.
-  lineHeight: gallantLineHeight,
+  lineHeight: 1,
   scrollback: 5000,
   theme: { background: "#050705", foreground: "#d4ffd4", cursor: "#eaff38", cursorAccent: "#050705" },
 });
 terminal.open(document.getElementById("terminal"));
 terminal.focus();
-document.fonts.load("16px Gallant12").then(() => terminal.refresh(0, terminal.rows - 1));
 
 const status = document.getElementById("connection");
 const block = document.getElementById("mcp-block");
