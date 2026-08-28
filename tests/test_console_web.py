@@ -155,6 +155,8 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
             websocket.send_json({"type": "set_mcp_write_blocked", "blocked": False})
             changed = websocket.receive_json()
             assert changed["mcp_write_blocked"] is False
+        with client.websocket_connect("ws://127.0.0.1:8765/ws/console") as websocket:
+            assert websocket.receive_json()["type"] == "status"
 
 
 def test_authenticated_target_routes_and_partial_errors(tmp_path) -> None:

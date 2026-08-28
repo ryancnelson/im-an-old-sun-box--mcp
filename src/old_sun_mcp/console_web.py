@@ -167,6 +167,18 @@ def _browser_mutation_allowed(request: Request, config: ConsoleWebConfig) -> boo
     return origin in allowed_origins
 
 
+def _websocket_origin_allowed(websocket: WebSocket, config: ConsoleWebConfig) -> bool:
+    origin = websocket.headers.get("origin")
+    if origin == config.public_url:
+        return True
+    if not config.development_auth:
+        return False
+    if origin is None:
+        return True
+    scheme = "https" if websocket.url.scheme == "wss" else "http"
+    return origin == f"{scheme}://{websocket.url.netloc}"
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -422,8 +434,7 @@ def create_console_app(
         return JSONResponse(result, status_code=status)
 
     async def websocket_console(websocket: WebSocket) -> None:
-        expected_origin = config.public_url
-        if not _authenticated(websocket.scope) or websocket.headers.get("origin") != expected_origin:
+        if not _authenticated(websocket.scope) or not _websocket_origin_allowed(websocket, config):
             await websocket.close(code=4403)
             return
         await websocket.accept()
