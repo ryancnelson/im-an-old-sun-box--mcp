@@ -49,6 +49,20 @@ def _non_negative_int(value: Any, name: str) -> int:
     return value
 
 
+def _bounded_seconds(value: Any, name: str, maximum: float = 300) -> float:
+    if isinstance(value, bool):
+        raise OldSunError("INVALID_ARGUMENT", f"{name} must be between 0 and {maximum:g} seconds")
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError) as exc:
+        raise OldSunError(
+            "INVALID_ARGUMENT", f"{name} must be between 0 and {maximum:g} seconds"
+        ) from exc
+    if not 0 < seconds <= maximum:
+        raise OldSunError("INVALID_ARGUMENT", f"{name} must be between 0 and {maximum:g} seconds")
+    return seconds
+
+
 class ConsoleRpcServer:
     def __init__(self, path: Path, token: str, broker: ConsoleBroker, *, max_request_bytes: int = 65_536):
         if not token:
@@ -146,7 +160,7 @@ class ConsoleRpcServer:
             return await self.broker.acquire(
                 str(params.get("owner", "")),
                 str(params.get("reason", "")),
-                ttl_seconds=float(params.get("ttl_seconds", 30)),
+                ttl_seconds=_bounded_seconds(params.get("ttl_seconds", 30), "ttl_seconds"),
             )
         if method == "release":
             return {"released": await self.broker.release(str(params.get("lease_id", "")))}
@@ -174,7 +188,9 @@ class ConsoleRpcServer:
             return await self.broker.expect(
                 pattern.encode("utf-8"),
                 after_cursor=_non_negative_int(params.get("after_cursor", 0), "after_cursor"),
-                timeout_seconds=float(params.get("timeout_seconds", 30)),
+                timeout_seconds=_bounded_seconds(
+                    params.get("timeout_seconds", 30), "timeout_seconds"
+                ),
             )
         raise OldSunError("INVALID_ARGUMENT", f"Unknown console RPC method: {method}")
 

@@ -201,7 +201,8 @@ class OldSunService:
         )
 
     def console_read(self, after_cursor: int = 0, max_bytes: int | None = None) -> dict[str, Any]:
-        maximum = min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes)
+        requested = self.config.max_output_bytes if max_bytes is None else max_bytes
+        maximum = min(requested, self.config.max_output_bytes)
         return self._call(
             layer="guest",
             operation="console.read",
@@ -271,7 +272,11 @@ class OldSunService:
                 {
                     "pattern": pattern,
                     "after_cursor": after_cursor,
-                    "timeout_seconds": timeout_seconds or self.config.default_timeout_seconds,
+                    "timeout_seconds": (
+                        self.config.default_timeout_seconds
+                        if timeout_seconds is None
+                        else timeout_seconds
+                    ),
                 },
             ),
         )

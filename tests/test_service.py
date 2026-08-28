@@ -88,3 +88,17 @@ def test_console_write_requires_exactly_one_payload_and_reason() -> None:
     assert missing["error"]["code"] == "INVALID_ARGUMENT"
     assert both["error"]["code"] == "INVALID_ARGUMENT"
     assert no_reason["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_console_service_does_not_replace_explicit_zero_bounds_with_defaults() -> None:
+    client = FakeConsoleClient()
+    service = OldSunService(
+        Config(console=ConsoleConfig(run="demo")),
+        console_client_factory=lambda: client,
+    )
+
+    service.console_read(max_bytes=0)
+    service.console_expect("ok", timeout_seconds=0)
+
+    assert client.calls[0] == ("read", {"after_cursor": 0, "max_bytes": 0})
+    assert client.calls[1][1]["timeout_seconds"] == 0

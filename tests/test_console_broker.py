@@ -107,6 +107,40 @@ async def test_human_input_precedes_queued_mcp_input(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_offline_writer_does_not_reserve_mcp_input_ahead_of_human(tmp_path: Path) -> None:
+    socket_path = Path("/tmp") / f"old-sun-priority-{uuid.uuid4().hex[:10]}.sock"
+    received = bytearray()
+    complete = asyncio.Event()
+
+    async def accept(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        received.extend(await reader.readexactly(4))
+        complete.set()
+        writer.close()
+
+    broker = ConsoleBroker(
+        console_socket=socket_path,
+        transcript=ConsoleTranscript(tmp_path / "transcript.bin", capacity_bytes=100),
+        policy_store=ConsolePolicyStore(tmp_path / "policy.json"),
+        reconnect_seconds=0.01,
+    )
+    await broker.start()
+    try:
+        await broker._input_queue.put(InputPriority.MCP, b"mcp", "mcp")
+        await asyncio.sleep(0.02)
+        await broker.queue_human_input(b"\x03")
+        server = await asyncio.start_unix_server(accept, path=socket_path)
+        try:
+            await asyncio.wait_for(complete.wait(), 1)
+        finally:
+            server.close()
+            await server.wait_closed()
+        assert received == b"\x03mcp"
+    finally:
+        await broker.stop()
+        socket_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
 async def test_policy_blocks_mcp_but_not_human_input(tmp_path: Path) -> None:
     store = ConsolePolicyStore(tmp_path / "policy.json")
     broker = ConsoleBroker(
@@ -144,3 +178,18 @@ async def test_lease_is_exclusive_expiring_and_releasable(tmp_path: Path) -> Non
     assert replacement["lease_id"] != lease["lease_id"]
     assert await broker.release(replacement["lease_id"]) is True
     assert await broker.release(replacement["lease_id"]) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds", [0, float("nan"), float("inf")])
+async def test_lease_rejects_non_finite_or_out_of_range_ttl(tmp_path: Path, seconds: float) -> None:
+    broker = ConsoleBroker(
+        console_socket=tmp_path / "missing.sock",
+        transcript=ConsoleTranscript(tmp_path / "transcript.bin"),
+        policy_store=ConsolePolicyStore(tmp_path / "policy.json"),
+    )
+
+    with pytest.raises(OldSunError) as raised:
+        await broker.acquire("codex", "test", ttl_seconds=seconds)
+
+    assert raised.value.code == "INVALID_ARGUMENT"

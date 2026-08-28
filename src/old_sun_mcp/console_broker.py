@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from enum import IntEnum
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -356,9 +357,9 @@ class ConsoleBroker:
 
     async def _writer_loop(self) -> None:
         while not self._stopping.is_set():
+            await self._connected.wait()
             item = await self._input_queue.get()
             try:
-                await self._connected.wait()
                 writer = self._writer
                 if writer is None:
                     raise ConnectionError("console disconnected before write")
@@ -415,6 +416,8 @@ class ConsoleBroker:
             raise OldSunError("INVALID_ARGUMENT", "expect pattern must not be empty")
         if len(pattern) > 4096:
             raise OldSunError("OUTPUT_LIMIT", "expect pattern exceeds 4096 bytes")
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > 300:
+            raise OldSunError("INVALID_ARGUMENT", "Console expect timeout must be between 0 and 300 seconds")
         deadline = time.monotonic() + timeout_seconds
         cursor = after_cursor
         carry = b""
@@ -445,7 +448,7 @@ class ConsoleBroker:
     async def acquire(self, owner: str, reason: str, *, ttl_seconds: float) -> dict[str, Any]:
         if not owner.strip() or not reason.strip():
             raise OldSunError("INVALID_ARGUMENT", "Console lease owner and reason are required")
-        if ttl_seconds <= 0 or ttl_seconds > 300:
+        if not math.isfinite(ttl_seconds) or ttl_seconds <= 0 or ttl_seconds > 300:
             raise OldSunError("INVALID_ARGUMENT", "Console lease TTL must be between 0 and 300 seconds")
         async with self._lease_lock:
             active = self._active_lease()

@@ -124,6 +124,14 @@ async def test_rpc_rejects_wrong_token_and_policy_blocks_write(tmp_path: Path) -
                 {"lease_id": lease["lease_id"], "key": "ctrl-c", "reason": "test"},
             )
         assert raised.value.code == "CONSOLE_POLICY_BLOCKED"
+
+        with pytest.raises(OldSunError) as raised:
+            await asyncio.to_thread(
+                right.request,
+                "acquire",
+                {"owner": "codex", "reason": "test", "ttl_seconds": "forever"},
+            )
+        assert raised.value.code == "INVALID_ARGUMENT"
     finally:
         await server.stop()
         rpc_socket.unlink(missing_ok=True)
