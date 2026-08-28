@@ -1,0 +1,17 @@
+version = 1
+default_run = "oi-basecamp-latest"
+max_output_bytes = 262144
+default_timeout_seconds = 30
+ledger_dir = "/tink/evidence/old-sun-mcp"
+
+[[run_roots]]
+path = "/tink/runs"
+manifest = "manifest.txt"
+console_log = "console.log"
+monitor_kind = "qmp"
+monitor_socket = "qmp.sock"
+
+[console]
+rpc_socket = "/tink/vm-state/oi-basecamp/console-broker.sock"
+token_env = "OLD_SUN_CONSOLE_MCP_TOKEN"
+run = "oi-basecamp-latest"

@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+
+set -euo pipefail
+umask 077
+
+ENV_FILE=/etc/old-sun-console/console.env
+RUN_LINK=/tink/runs/oi-basecamp-latest
+VENV=/opt/old-sun-console/venv
+
+[[ -r "$ENV_FILE" ]] || { echo "missing $ENV_FILE" >&2; exit 1; }
+[[ -L "$RUN_LINK" ]] || { echo "missing current run link: $RUN_LINK" >&2; exit 1; }
+RUN_DIR=$(readlink -f "$RUN_LINK")
+[[ "$RUN_DIR" == /tink/runs/* ]] || { echo "current run escaped /tink/runs" >&2; exit 1; }
+[[ -S "$RUN_DIR/console.sock" ]] || { echo "missing QEMU console socket: $RUN_DIR/console.sock" >&2; exit 1; }
+[[ -f "$RUN_DIR/qemu.pid" ]] || { echo "missing QEMU pid file: $RUN_DIR/qemu.pid" >&2; exit 1; }
+
+set -a
+source "$ENV_FILE"
+set +a
+export OLD_SUN_RUN_DIR="$RUN_DIR"
+
+exec "$VENV/bin/old-sun-console"

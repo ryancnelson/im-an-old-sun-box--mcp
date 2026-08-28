@@ -453,7 +453,9 @@ class ConsoleBroker:
                 raise OldSunError("CONSOLE_LEASE_HELD", "Another MCP console lease is active", active.public())
             now = time.monotonic()
             self._lease = ConsoleLease(secrets.token_urlsafe(24), owner, reason, now, now + ttl_seconds)
-            return self._lease.public()
+            result = self._lease.public()
+        await self._publish({"type": "status", "status": self.status()})
+        return result
 
     def _verify_lease(self, lease_id: str) -> ConsoleLease:
         active = self._active_lease()
@@ -469,7 +471,8 @@ class ConsoleBroker:
             if active is None or not secrets.compare_digest(active.lease_id, lease_id):
                 return False
             self._lease = None
-            return True
+        await self._publish({"type": "status", "status": self.status()})
+        return True
 
     def _bounded_input(self, data: bytes) -> None:
         if not data:

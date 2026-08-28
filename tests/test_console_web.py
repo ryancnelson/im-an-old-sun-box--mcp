@@ -104,7 +104,9 @@ def test_authenticated_websocket_receives_replay_and_accepts_human_input(tmp_pat
 
     with TestClient(app, base_url="https://console.example.test") as client:
         client.cookies.set("old_sun_session", session)
-        with client.websocket_connect("/ws/console") as websocket:
+        with client.websocket_connect(
+            "/ws/console", headers={"origin": "https://console.example.test"}
+        ) as websocket:
             initial = websocket.receive_json()
             assert initial["type"] == "initial"
             assert base64.b64decode(initial["data_base64"]) == b"ok "

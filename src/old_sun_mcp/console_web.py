@@ -286,6 +286,10 @@ def create_console_app(
 
     @app.websocket("/ws/console")
     async def console_socket(websocket: WebSocket) -> None:
+        origin = websocket.headers.get("origin", "").rstrip("/")
+        if not secrets.compare_digest(origin, config.public_base_url.rstrip("/")):
+            await websocket.close(code=4403)
+            return
         user = user_from_token(websocket.cookies.get(SESSION_COOKIE))
         if user is None:
             await websocket.close(code=4401)

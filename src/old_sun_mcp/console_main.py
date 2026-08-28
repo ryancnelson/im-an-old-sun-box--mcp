@@ -121,4 +121,6 @@ def create_runtime_app(config: ConsoleRuntimeConfig):
 def main() -> None:
     config = load_runtime_config()
     app = create_runtime_app(config)
-    uvicorn.run(app, host=config.bind_host, port=config.bind_port, log_level="info")
+    # OAuth callbacks contain a short-lived authorization code in the query
+    # string. Keep uvicorn's access logger from recording it.
+    uvicorn.run(app, host=config.bind_host, port=config.bind_port, log_level="info", access_log=False)
