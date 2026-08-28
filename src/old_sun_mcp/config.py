@@ -52,6 +52,14 @@ class DebuggerProfile:
 
 
 @dataclass(frozen=True)
+class ConsoleControlConfig:
+    socket: Path
+    run: str
+    token_env: str = "OLD_SUN_CONSOLE_MCP_TOKEN"
+    timeout_seconds: float = 5.0
+
+
+@dataclass(frozen=True)
 class Config:
     configured: bool = False
     source: Path | None = None
@@ -64,6 +72,7 @@ class Config:
     guest_adapters: Mapping[str, GuestAdapter] = field(default_factory=dict)
     trace_recipes: Mapping[str, TraceRecipe] = field(default_factory=dict)
     debugger_profiles: Mapping[str, DebuggerProfile] = field(default_factory=dict)
+    console_control: ConsoleControlConfig | None = None
     ledger_dir: Path | None = None
 
 
@@ -77,6 +86,7 @@ TOP_LEVEL_KEYS = {
     "guest_adapters",
     "trace_recipes",
     "debugger_profiles",
+    "console_control",
     "ledger_dir",
 }
 
@@ -249,6 +259,28 @@ def load_config(
     max_output = int(_positive_number(raw.get("max_output_bytes", 262_144), "max_output_bytes"))
     timeout = _positive_number(raw.get("default_timeout_seconds", 30), "default_timeout_seconds")
     ledger = raw.get("ledger_dir")
+    console_control_raw = raw.get("console_control")
+    console_control = None
+    if console_control_raw is not None:
+        if not isinstance(console_control_raw, dict):
+            raise invalid_config("console_control must be a table")
+        _unknown_keys(console_control_raw, {"socket", "run", "token_env", "timeout_seconds"}, "console_control")
+        socket_value = console_control_raw.get("socket")
+        run_value = console_control_raw.get("run")
+        token_env = console_control_raw.get("token_env", "OLD_SUN_CONSOLE_MCP_TOKEN")
+        if not isinstance(socket_value, str) or not isinstance(run_value, str) or not run_value.strip():
+            raise invalid_config("console_control.socket and console_control.run are required strings")
+        if not isinstance(token_env, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", token_env):
+            raise invalid_config("console_control.token_env must be an environment variable name")
+        console_control = ConsoleControlConfig(
+            socket=_path_from(base, socket_value),
+            run=run_value,
+            token_env=token_env,
+            timeout_seconds=_positive_number(
+                console_control_raw.get("timeout_seconds", 5),
+                "console_control.timeout_seconds",
+            ),
+        )
     return Config(
         configured=True,
         source=source,
@@ -261,5 +293,6 @@ def load_config(
         guest_adapters=adapters,
         trace_recipes=recipes,
         debugger_profiles=debugger_profiles,
+        console_control=console_control,
         ledger_dir=_path_from(base, ledger) if ledger else None,
     )

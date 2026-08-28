@@ -23,6 +23,8 @@ def create_server(config: Config | None = None) -> FastMCP:
 
     register("lab.list_runs", service.lab_list_runs, observe); register("lab.describe_run", service.lab_describe_run, observe); register("lab.classify", service.lab_classify, observe)
     register("guest.console_tail", service.guest_console_tail, observe); register("guest.exec", service.guest_exec, mutate)
+    register("guest.console_status", service.guest_console_status, observe); register("guest.console_read", service.guest_console_read, observe); register("guest.console_write", service.guest_console_write, mutate)
+    register("guest.vm_control", service.guest_vm_control, mutate)
     register("qemu.status", service.qemu_status, observe); register("qemu.hmp_query", service.qemu_hmp_query, observe); register("qemu.hmp_control", service.qemu_hmp_control, mutate)
     register("host.process_sample", service.host_process_sample, observe); register("host.trace_capabilities", service.host_trace_capabilities, observe); register("host.trace", service.host_trace, mutate)
     register("debugger.capture", service.debugger_capture, mutate)

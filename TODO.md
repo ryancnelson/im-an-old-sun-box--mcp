@@ -19,6 +19,25 @@ sense.
 
 ## Ready
 
+### SUN-011 — Authenticated shared web console
+
+- **Status:** active
+- **Owner:** Codex with Ryan Nelson
+- **Branch:** `codex/sun-011-authenticated-console`
+- **SPEC:** Section 15.2
+- **Depends on:** SUN-001 and one validated live `console.sock`
+- **Why:** Ryan and the MCP need an out-of-band console that remains usable
+  while guest networking is absent, with the human retaining unconditional
+  input and an explicit persistent switch that can block MCP input.
+- **Acceptance:** `console.unix.wtf` uses managed TLS and GitHub OAuth restricted
+  to Ryan's immutable GitHub identity; an xterm.js client can read and type;
+  the same app can run loopback-only on minnie against a local Unix socket or a
+  fixed SSH console adapter;
+  the MCP can read and conditionally type through an authenticated local
+  control socket; the human's MCP-write block persists across browser and
+  broker restarts; rejected OAuth, blocked MCP writes, reconnects, and the live
+  QEMU console path are tested and documented.
+
 ### SUN-003 — Add the first live host trace recipe
 
 - **Status:** ready

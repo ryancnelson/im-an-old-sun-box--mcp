@@ -580,6 +580,43 @@ failure in either phase MUST preserve enough state to retry safely. Lifecycle
 tools require a reason, exact run selectors, idempotency keys, and an operator-
 configured launch profile; they MUST NOT guess which disk image to reuse.
 
+### 15.2 Authenticated shared console
+
+An optional web console MAY own a validated run's `console.sock` and provide
+browser and MCP clients with a shared view. It MUST preserve the out-of-band
+control boundary and MUST NOT depend on guest networking.
+
+The public HTTP service MUST bind to loopback behind a TLS reverse proxy. Human
+access MUST use GitHub OAuth authorization-code flow and MUST compare both the
+returned login and immutable numeric user ID with configured allowlist values.
+An unlisted identity MUST receive no console history, run metadata, or control
+state. OAuth state parameters and secure, HTTP-only session cookies are
+required.
+
+The broker is the only process that MAY own the QEMU console transport while it
+is running. The transport MAY be a local Unix socket or a fixed configured argv
+adapter that reaches a console on an SSH-accessible host. Adapter arguments
+MUST NOT be derived from browser or MCP input. The broker MUST serialize
+writes, retain bounded console history, reconnect after an interruption, and
+expose connection state without claiming that the guest is healthy.
+
+Human browser sessions MAY always write console bytes. MCP access MUST use a
+separate authenticated local control socket. A persistent operator setting
+MUST be able to block MCP writes without blocking MCP reads or human writes.
+The default is blocked. Every MCP status and write response MUST include the
+current block state; a blocked write MUST fail before sending any byte to the
+guest. The setting MUST survive browser disconnects and broker restarts and
+MUST be written atomically with restrictive permissions.
+
+Neither the OAuth client secret, session signing secret, nor MCP control token
+may appear in TOML, logs, process arguments, repository files, or browser
+responses. Production startup MUST fail closed when any required secret or
+identity pin is absent.
+
+A development mode MAY bypass OAuth only when the HTTP listener is explicitly
+bound to an IP loopback address. Startup MUST reject development mode on a
+wildcard, hostname, or non-loopback bind.
+
 ## 16. Definition of done
 
 Version 0.1 is done when:

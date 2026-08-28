@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+import base64
+import binascii
+import os
 
 from .config import Config
+from .console_client import control_request
 from .debugger import HmpMonitor, QmpMonitor, capture as debugger_capture, run_gdb
 from .envelope import failure, success
 from .errors import OldSunError
@@ -48,6 +52,107 @@ class OldSunService:
             resolved = self.runs.resolve(run)
             return console_tail(self.runs.console_log(resolved), min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes))
         return self._call(layer="guest", operation="guest.console_tail", run=run, source={"kind": "file", "ref": "configured console log"}, mutation="observe", action=action)
+
+    def _console_control(self, run: str | None, operation: str, **values: Any) -> tuple[str, dict[str, Any]]:
+        selected = self.config.console_control
+        if selected is None:
+            raise OldSunError("CONFIG_NOT_FOUND", "console_control is not configured")
+        if run is not None and run != selected.run:
+            raise OldSunError("RUN_NOT_FOUND", "The console broker is configured for a different run")
+        token = os.environ.get(selected.token_env, "")
+        if not token:
+            raise OldSunError("CONFIG_NOT_FOUND", f"Console token environment variable is absent: {selected.token_env}")
+        response = control_request(
+            str(selected.socket),
+            token,
+            {"operation": operation, **values},
+            timeout_seconds=selected.timeout_seconds,
+            max_bytes=self.config.max_output_bytes,
+        )
+        return selected.run, response
+
+    def guest_console_status(self, run: str | None = None) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        return self._call(
+            layer="guest",
+            operation="guest.console_status",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured control socket"},
+            mutation="observe",
+            action=lambda: self._console_control(run, "status")[1],
+        )
+
+    def guest_console_read(self, run: str | None = None, max_bytes: int | None = None) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        def action() -> Any:
+            _, response = self._console_control(run, "read")
+            try:
+                data = base64.b64decode(response.pop("data_base64"), validate=True)
+            except (KeyError, ValueError, binascii.Error) as exc:
+                raise OldSunError("PROTOCOL_ERROR", "Console broker returned invalid history") from exc
+            limit = min(max_bytes or self.config.max_output_bytes, self.config.max_output_bytes)
+            data = data[-limit:]
+            return {
+                **response,
+                "text": data.decode("utf-8", errors="replace"),
+                "data_base64": base64.b64encode(data).decode("ascii"),
+                "bytes": len(data),
+            }
+        return self._call(
+            layer="guest",
+            operation="guest.console_read",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured control socket"},
+            mutation="observe",
+            action=action,
+        )
+
+    def guest_console_write(
+        self,
+        *,
+        reason: str,
+        run: str | None = None,
+        text: str | None = None,
+        data_base64: str | None = None,
+    ) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        def action() -> Any:
+            self._reason(reason)
+            if (text is None) == (data_base64 is None):
+                raise OldSunError("INVALID_ARGUMENT", "Provide exactly one of text or data_base64")
+            if text is not None:
+                encoded = base64.b64encode(text.encode()).decode("ascii")
+            else:
+                try:
+                    base64.b64decode(data_base64 or "", validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise OldSunError("INVALID_ARGUMENT", "data_base64 is invalid") from exc
+                encoded = data_base64 or ""
+            return self._console_control(run, "write", reason=reason, data_base64=encoded)[1]
+        return self._call(
+            layer="guest",
+            operation="guest.console_write",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured control socket"},
+            mutation="disruptive",
+            action=action,
+        )
+
+    def guest_vm_control(self, action: str, *, reason: str, run: str | None = None) -> dict[str, Any]:
+        selected_run = run or (self.config.console_control.run if self.config.console_control else None)
+        def invoke() -> Any:
+            self._reason(reason)
+            if action not in {"break", "reset", "powerdown", "start"}:
+                raise OldSunError("INVALID_ARGUMENT", "action must be break, reset, powerdown, or start")
+            return self._console_control(run, "vm_control", action=action, reason=reason)[1]
+        return self._call(
+            layer="emulator",
+            operation="guest.vm_control",
+            run=selected_run,
+            source={"kind": "console_broker", "ref": "configured lifecycle adapter"},
+            mutation="disruptive",
+            action=invoke,
+        )
 
     def guest_exec(self, run: str, command: str, *, reason: str, adapter: str | None = None, timeout_seconds: float | None = None) -> dict[str, Any]:
         def action() -> Any:

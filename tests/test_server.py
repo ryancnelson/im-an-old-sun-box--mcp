@@ -15,6 +15,7 @@ async def test_server_enumerates_canonical_tools() -> None:
     names = {tool.name for tool in tools}
     assert {
         "lab.list_runs", "lab.describe_run", "guest.console_tail", "guest.exec",
+        "guest.console_status", "guest.console_read", "guest.console_write",
         "qemu.status", "qemu.hmp_query", "qemu.hmp_control",
         "host.process_sample", "host.trace_capabilities", "host.trace",
         "debugger.capture", "evidence.record", "evidence.read",
