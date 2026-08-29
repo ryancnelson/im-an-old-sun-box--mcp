@@ -56,16 +56,18 @@ does not expose arbitrary QMP execution.
 
 ## Multi-host browser console
 
-The browser console can discover live QEMU serial sockets on a fixed list of
+The browser console can discover live QEMU serial endpoints on a fixed list of
 hosts. Use [the Minnie registry](../examples/console-hosts-minnie.json) as the
-starting configuration. Review its socket roots before starting the service.
-Discovery rejects sockets outside those roots.
+starting configuration. Review its socket roots and TCP ports before starting
+the service. Discovery rejects Unix sockets outside `allowed_socket_roots` and
+TCP endpoints outside `allowed_tcp_ports`. TCP serial servers must also bind to
+loopback; wildcard and remotely reachable listeners are never accepted.
 
 Minnie needs non-interactive SSH access to each remote `ssh_target`. The SSH
 agent supplies credentials. Host-key checking uses the machine's existing SSH
 configuration. Remote hosts also need `/bin/sh`, process inspection commands,
-and `/usr/bin/socat`. Nothing is installed or copied to a remote host by the
-console service.
+and `/usr/bin/socat` for Unix sockets or `/usr/bin/nc` for TCP endpoints.
+Nothing is installed or copied to a remote host by the console service.
 
 For local development authentication:
 
@@ -89,7 +91,9 @@ legacy fixed-console configuration.
 `GET /api/targets` inspects all configured hosts concurrently. A timeout or SSH
 failure appears under that host's `errors` entry; results from other hosts are
 still returned. Discovery begins with live QEMU processes and validates their
-serial sockets. It does not scan run directories for stale socket files.
+serial endpoints. Unix sockets are checked on the remote filesystem; TCP
+targets are derived from the live QEMU argv and constrained by the host's exact
+port allowlist. It does not scan run directories for stale socket files.
 
 The selected target is global. Changing a selector in the browser does nothing
 until Connect is pressed. A successful change clears buffered output from the

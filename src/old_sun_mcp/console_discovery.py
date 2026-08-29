@@ -23,6 +23,7 @@ _HOST_KEYS = {
     "ssh_target",
     "local",
     "allowed_socket_roots",
+    "allowed_tcp_ports",
     "lifecycle_argv",
     "discovery_timeout_seconds",
     "connect_timeout_seconds",
@@ -36,6 +37,7 @@ class ConsoleHost:
     platform: Platform
     ssh_target: str | None
     allowed_socket_roots: tuple[PurePosixPath, ...]
+    allowed_tcp_ports: tuple[int, ...] = ()
     lifecycle_argv: tuple[str, ...] | None = None
     discovery_timeout_seconds: float = 5.0
     connect_timeout_seconds: float = 5.0
@@ -45,6 +47,10 @@ class ConsoleHost:
         if not path.is_absolute() or ".." in path.parts or any(character in str(path) for character in ("\0", "\n", "\r")):
             return False
         return any(path == root or root in path.parents for root in self.allowed_socket_roots)
+
+    def allows_tcp(self, host: str, port: int) -> bool:
+        """Allow only explicitly configured loopback TCP console ports."""
+        return host in {"127.0.0.1", "localhost", "::1"} and port in self.allowed_tcp_ports
 
 
 @dataclass(frozen=True)
@@ -58,12 +64,24 @@ class QemuProcess:
 class ConsoleTarget:
     target_id: str
     host_id: str
-    socket_path: PurePosixPath
+    socket_path: PurePosixPath | None
     pid: int
     started_at: str
     command: str
     qemu_name: str | None
     socket_mtime: float | None
+    tcp_host: str | None = None
+    tcp_port: int | None = None
+
+    @property
+    def endpoint(self) -> str:
+        if self.socket_path is not None:
+            return str(self.socket_path)
+        return f"tcp://{self.tcp_host}:{self.tcp_port}"
+
+    @property
+    def endpoint_kind(self) -> str:
+        return "unix" if self.socket_path is not None else "tcp"
 
     @classmethod
     def create(
@@ -80,6 +98,23 @@ class ConsoleTarget:
         identity = f"{host_id}\0{pid}\0{started_at}\0{socket_path}".encode()
         target_id = hashlib.sha256(identity).hexdigest()[:24]
         return cls(target_id, host_id, socket_path, pid, started_at, command, qemu_name, socket_mtime)
+
+    @classmethod
+    def create_tcp(
+        cls,
+        *,
+        host_id: str,
+        tcp_host: str,
+        tcp_port: int,
+        pid: int,
+        started_at: str,
+        command: str,
+        qemu_name: str | None,
+    ) -> "ConsoleTarget":
+        endpoint = f"tcp://{tcp_host}:{tcp_port}"
+        identity = f"{host_id}\0{pid}\0{started_at}\0{endpoint}".encode()
+        target_id = hashlib.sha256(identity).hexdigest()[:24]
+        return cls(target_id, host_id, None, pid, started_at, command, qemu_name, None, tcp_host, tcp_port)
 
 
 @dataclass(frozen=True)
@@ -117,7 +152,7 @@ done
 """,
     "darwin": b"""# OLD_SUN_DISCOVERY_V1 darwin
 ps -axo pid=,lstart=,command= | while read -r pid dow mon day clock year command; do
-    case "$command" in *qemu-system-*)
+    case "$command" in *qemu-system-*|*qemu-*-softmmu*)
         printf '%s\\t%s %s %s %s %s\\t%s\\n' "$pid" "$dow" "$mon" "$day" "$clock" "$year" "$command"
         ;;
     esac
@@ -260,8 +295,7 @@ class ConsoleDiscovery:
 
         targets: list[ConsoleTarget] = []
         for process in parse_process_records(host.platform, result.stdout.decode("utf-8", "replace")):
-            executable = PurePosixPath(process.argv[0]).name
-            if not executable.startswith("qemu-system-"):
+            if not is_qemu_process(process.argv):
                 continue
             command = shlex.join(process.argv)
             for path in parse_console_paths(process.argv):
@@ -280,6 +314,20 @@ class ConsoleDiscovery:
                         command=command,
                         qemu_name=parse_qemu_name(process.argv),
                         socket_mtime=mtime,
+                    )
+                )
+            for tcp_host, tcp_port in parse_console_tcp_endpoints(process.argv):
+                if not host.allows_tcp(tcp_host, tcp_port):
+                    continue
+                targets.append(
+                    ConsoleTarget.create_tcp(
+                        host_id=host.host_id,
+                        tcp_host=tcp_host,
+                        tcp_port=tcp_port,
+                        pid=process.pid,
+                        started_at=process.started_at,
+                        command=command,
+                        qemu_name=parse_qemu_name(process.argv),
                     )
                 )
         return tuple(targets)
@@ -303,7 +351,7 @@ class ConsoleDiscovery:
                 errors[host.host_id] = DiscoveryError(kind, str(result) or kind)
             else:
                 targets.extend(result)
-        targets.sort(key=lambda target: (target.host_id, target.qemu_name or "", target.pid, str(target.socket_path)))
+        targets.sort(key=lambda target: (target.host_id, target.qemu_name or "", target.pid, target.endpoint))
         return DiscoveryReport(tuple(targets), errors)
 
     async def revalidate(self, target: ConsoleTarget) -> ConsoleTarget:
@@ -321,10 +369,20 @@ class ConsoleDiscovery:
 
     def connector(self, target: ConsoleTarget) -> ConsoleConnector:
         host = self._hosts.get(target.host_id)
-        if host is None or not host.allows(target.socket_path):
+        if host is None:
             raise ValueError("unknown or disallowed console target")
-        if host.ssh_target is None:
-            return UnixConsoleConnector(Path(str(target.socket_path)))
+        if target.socket_path is not None:
+            if not host.allows(target.socket_path):
+                raise ValueError("unknown or disallowed console target")
+            if host.ssh_target is None:
+                return UnixConsoleConnector(Path(str(target.socket_path)))
+            remote_argv = ("/usr/bin/socat", "-", f"UNIX-CONNECT:{target.socket_path}")
+        else:
+            if target.tcp_host is None or target.tcp_port is None or not host.allows_tcp(target.tcp_host, target.tcp_port):
+                raise ValueError("unknown or disallowed console target")
+            remote_argv = ("/usr/bin/nc", target.tcp_host, str(target.tcp_port))
+            if host.ssh_target is None:
+                return ArgvConsoleConnector(remote_argv)
         timeout = max(1, int(host.connect_timeout_seconds))
         return ArgvConsoleConnector(
             (
@@ -335,9 +393,7 @@ class ConsoleDiscovery:
                 f"ConnectTimeout={timeout}",
                 "-T",
                 host.ssh_target,
-                "/usr/bin/socat",
-                "-",
-                f"UNIX-CONNECT:{target.socket_path}",
+                *remote_argv,
             )
         )
 
@@ -360,6 +416,15 @@ def _comma_fields(value: str) -> tuple[str, dict[str, str]]:
     return fields[0], parsed
 
 
+def is_qemu_process(argv: tuple[str, ...] | list[str]) -> bool:
+    """Recognize upstream QEMU and UTM's bundled softmmu executable."""
+    for value in tuple(argv)[:2]:
+        executable = PurePosixPath(value).name
+        if executable.startswith("qemu-system-") or (executable.startswith("qemu-") and executable.endswith("-softmmu")):
+            return True
+    return False
+
+
 def parse_console_paths(argv: tuple[str, ...] | list[str]) -> tuple[PurePosixPath, ...]:
     """Extract Unix sockets used by QEMU serial devices from an argv vector."""
     arguments = tuple(argv)
@@ -379,6 +444,31 @@ def parse_console_paths(argv: tuple[str, ...] | list[str]) -> tuple[PurePosixPat
                 paths.append(path)
 
     return tuple(dict.fromkeys(paths))
+
+
+def parse_console_tcp_endpoints(argv: tuple[str, ...] | list[str]) -> tuple[tuple[str, int], ...]:
+    """Extract loopback TCP servers referenced by QEMU serial devices."""
+    arguments = tuple(argv)
+    chardevs: dict[str, tuple[str, int]] = {}
+    for definition in _option_values(arguments, "-chardev"):
+        backend, fields = _comma_fields(definition)
+        if backend != "socket" or not fields.get("id") or fields.get("server") not in {"on", "yes"}:
+            continue
+        tcp_host = fields.get("host", "127.0.0.1")
+        try:
+            tcp_port = int(fields.get("port", ""))
+        except ValueError:
+            continue
+        if tcp_host in {"127.0.0.1", "localhost", "::1"} and 1 <= tcp_port <= 65535:
+            chardevs[fields["id"]] = (tcp_host, tcp_port)
+
+    endpoints: list[tuple[str, int]] = []
+    for serial in _option_values(arguments, "-serial"):
+        if serial.startswith("chardev:"):
+            endpoint = chardevs.get(serial.removeprefix("chardev:"))
+            if endpoint is not None:
+                endpoints.append(endpoint)
+    return tuple(dict.fromkeys(endpoints))
 
 
 def parse_qemu_name(argv: tuple[str, ...] | list[str]) -> str | None:
@@ -438,12 +528,21 @@ def parse_hosts_json(payload: str) -> tuple[ConsoleHost, ...]:
         elif not isinstance(ssh_target, str) or not ssh_target:
             raise ValueError(f"remote host {host_id} requires ssh_target")
 
-        raw_roots = raw.get("allowed_socket_roots")
-        if not isinstance(raw_roots, list) or not raw_roots or not all(isinstance(item, str) for item in raw_roots):
-            raise ValueError(f"host {host_id} allowed_socket_roots must be a non-empty string array")
+        raw_roots = raw.get("allowed_socket_roots", [])
+        if not isinstance(raw_roots, list) or not all(isinstance(item, str) for item in raw_roots):
+            raise ValueError(f"host {host_id} allowed_socket_roots must be a string array")
         roots = tuple(PurePosixPath(item) for item in raw_roots)
         if any(not root.is_absolute() or ".." in root.parts for root in roots):
             raise ValueError(f"host {host_id} socket roots must be absolute without parent traversal")
+
+        raw_tcp_ports = raw.get("allowed_tcp_ports", [])
+        if not isinstance(raw_tcp_ports, list) or any(
+            isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535 for port in raw_tcp_ports
+        ):
+            raise ValueError(f"host {host_id} allowed_tcp_ports must contain valid TCP ports")
+        tcp_ports = tuple(dict.fromkeys(raw_tcp_ports))
+        if not roots and not tcp_ports:
+            raise ValueError(f"host {host_id} requires an allowed console endpoint")
 
         raw_lifecycle = raw.get("lifecycle_argv")
         lifecycle: tuple[str, ...] | None = None
@@ -463,6 +562,7 @@ def parse_hosts_json(payload: str) -> tuple[ConsoleHost, ...]:
                 platform=platform,
                 ssh_target=ssh_target,
                 allowed_socket_roots=roots,
+                allowed_tcp_ports=tcp_ports,
                 lifecycle_argv=lifecycle,
                 discovery_timeout_seconds=discovery_timeout,
                 connect_timeout_seconds=connect_timeout,

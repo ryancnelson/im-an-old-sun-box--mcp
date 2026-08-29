@@ -323,7 +323,9 @@ def create_console_app(
         return {
             "target_id": target.target_id,
             "host_id": target.host_id,
-            "socket_path": str(target.socket_path),
+            "socket_path": str(target.socket_path) if target.socket_path is not None else None,
+            "endpoint": target.endpoint,
+            "endpoint_kind": target.endpoint_kind,
             "pid": target.pid,
             "started_at": target.started_at,
             "command": target.command,

@@ -16,8 +16,8 @@ without turning the normative docs into Friday-night word salad.
 [Codex setup](docs/CODEX-CONFIG.md) covers direct installation on the VM host
 and the SSH stdio path from another machine.
 
-The authenticated browser console can discover live QEMU serial sockets on the
-four current lab hosts, switch the one shared browser/MCP target, and retain the
+The authenticated browser console can discover live QEMU serial endpoints on
+the five current lab hosts, switch the one shared browser/MCP target, and retain the
 human-controlled MCP write block across restarts. Discovery uses Minnie's SSH
 agent and fixed host profiles; guest networking is not involved. See the
 [operator guide](docs/OPERATIONS.md#multi-host-browser-console) and the

@@ -73,10 +73,10 @@ const updateActiveTarget = (target, announce) => {
     activePid.textContent = "";
   } else {
     activeHost.textContent = target.host_id;
-    activeSocket.textContent = target.socket_path;
-    activeTransport.textContent = target.host_id === "minnie-2-2" ? "via local socket" : "via SSH";
+    activeSocket.textContent = target.endpoint || target.socket_path;
+    activeTransport.textContent = target.host_id === "minnie-2-2" ? `via local ${target.endpoint_kind || "unix"}` : `via SSH ${target.endpoint_kind || "unix"}`;
     activePid.textContent = `PID ${target.pid}`;
-    if (announce) terminal.write(`\r\n[broker: connected target ${target.host_id} PID ${target.pid} ${target.socket_path}]\r\n`);
+    if (announce) terminal.write(`\r\n[broker: connected target ${target.host_id} PID ${target.pid} ${target.endpoint || target.socket_path}]\r\n`);
   }
   const lifecycleAvailable = target
     ? Boolean(target.capabilities?.lifecycle)
@@ -90,7 +90,7 @@ const populateConsoles = () => {
   targets.filter((target) => target.host_id === hostSelect.value).forEach((target) => {
     const option = document.createElement("option");
     option.value = target.target_id;
-    option.textContent = `${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.socket_path}`;
+    option.textContent = `${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.endpoint || target.socket_path}`;
     consoleSelect.append(option);
   });
   if (consoleSelect.options.length === 0) {

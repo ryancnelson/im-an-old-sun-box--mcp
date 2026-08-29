@@ -78,6 +78,37 @@ sense.
 
 ## Ideas
 
+### SUN-012 — SSH-reachable Unix socket consoles
+
+- **Status:** idea
+- **Why:** An operator should be able to register an exact byte-stream console
+  socket on any host reachable through SSH. This covers QEMU and serial socket
+  or named-pipe configurations from VirtualBox, VMware Fusion, and other VM
+  managers without requiring hypervisor-specific discovery.
+- **Question:** Which typed configuration and identity checks permit fixed
+  remote sockets without turning the connector into arbitrary remote command
+  execution or accepting stale sockets?
+- **Promotion gate:** Define the host, socket-path, process-identity,
+  allowlist, reconnect, timeout, and write-policy contracts; prove local and
+  SSH-backed adapters against fake sockets; and validate one non-QEMU VM
+  console without weakening the existing exact-target rules.
+
+### SUN-013 — UTM interoperability on arbitrary Macs
+
+- **Status:** idea
+- **Depends on:** SUN-012 for UTM serial devices configured as Unix or TCP
+  byte streams
+- **Why:** Discover running UTM QEMU VMs, identify their serial modes, and
+  expose attachable consoles without requiring a hand-written profile for each
+  Mac.
+- **Question:** Which UTM serial modes can be attached without restarting the
+  VM or displacing UTM's CocoaSpice client, and should built-in terminal mode
+  use a SPICE port helper or require an explicit socket configuration?
+- **Promotion gate:** Define the UTM process, UUID, configuration, socket, and
+  SPICE-port identity model; document the supported serial-mode matrix; and
+  validate discovery, read, write, reconnect, and concurrent-client behavior
+  against a disposable UTM VM.
+
 ### SUN-004 — Cross-host out-of-band relay
 
 - **Status:** idea

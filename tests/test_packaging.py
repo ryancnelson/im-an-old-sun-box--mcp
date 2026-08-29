@@ -18,10 +18,13 @@ def test_example_console_registry_contains_lab_hosts() -> None:
     assert {host_id: host["platform"] for host_id, host in hosts.items()} == {
         "ec2cicd": "linux",
         "minnie-2-2": "darwin",
+        "teddeck": "darwin",
         "niagara-playbox": "linux",
         "ec2trib": "illumos",
     }
     assert hosts["minnie-2-2"]["local"] is True
     assert hosts["ec2cicd"]["ssh_target"] == "root@ec2cicd"
     assert hosts["niagara-playbox"]["ssh_target"] == "niagara@niagara-playbox"
-    assert all(host["allowed_socket_roots"] for host in registry)
+    assert hosts["teddeck"]["ssh_target"] == "ryan@teddeck"
+    assert hosts["teddeck"]["allowed_tcp_ports"] == [4449]
+    assert all(host.get("allowed_socket_roots") or host.get("allowed_tcp_ports") for host in registry)

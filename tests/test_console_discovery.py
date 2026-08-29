@@ -7,7 +7,9 @@ from old_sun_mcp.console_discovery import (
     CommandResult,
     ConsoleDiscovery,
     ConsoleHost,
+    ConsoleTarget,
     parse_console_paths,
+    parse_console_tcp_endpoints,
     parse_hosts_json,
     parse_process_records,
 )
@@ -43,6 +45,28 @@ def test_parse_console_paths_ignores_unreferenced_chardev() -> None:
             "-monitor",
             "chardev:monitor",
         )
+    ) == ()
+
+
+def test_parse_utm_tcp_serial_endpoint() -> None:
+    argv = (
+        "/Applications/UTM.app/Contents/MacOS/QEMULauncher",
+        "/Applications/UTM.app/Contents/Frameworks/qemu-sparc-softmmu.framework/Versions/A/qemu-sparc-softmmu",
+        "-chardev",
+        "socket,id=term0,host=127.0.0.1,port=4449,server=on,wait=off",
+        "-serial",
+        "chardev:term0",
+    )
+
+    assert parse_console_tcp_endpoints(argv) == (("127.0.0.1", 4449),)
+
+
+def test_tcp_serial_parser_rejects_remote_or_client_endpoints() -> None:
+    assert parse_console_tcp_endpoints(
+        ("qemu-system-sparc", "-chardev", "socket,id=term0,host=0.0.0.0,port=4449,server=on", "-serial", "chardev:term0")
+    ) == ()
+    assert parse_console_tcp_endpoints(
+        ("qemu-system-sparc", "-chardev", "socket,id=term0,host=127.0.0.1,port=4449", "-serial", "chardev:term0")
     ) == ()
 
 
@@ -83,6 +107,13 @@ def test_parse_hosts_json_is_strict() -> None:
     assert [host.host_id for host in hosts] == ["ec2cicd", "minnie-2-2"]
     assert hosts[0].ssh_target == "root@ec2cicd"
     assert hosts[1].ssh_target is None
+
+    tcp_host = parse_hosts_json(
+        '[{"id":"teddeck","platform":"darwin","ssh_target":"ryan@teddeck","allowed_tcp_ports":[4449]}]'
+    )[0]
+    assert tcp_host.allowed_socket_roots == ()
+    assert tcp_host.allows_tcp("127.0.0.1", 4449)
+    assert not tcp_host.allows_tcp("127.0.0.1", 4450)
 
 
 @pytest.mark.parametrize(
@@ -213,6 +244,28 @@ async def test_illumos_discovery_uses_pargs_for_complete_qemu_argv() -> None:
 
 
 @pytest.mark.asyncio
+async def test_discovers_utm_loopback_tcp_console() -> None:
+    async def runner(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
+        return CommandResult(
+            0,
+            b"901\tFri Aug 29 12:00:00 2026\t/Applications/UTM.app/Contents/MacOS/QEMULauncher "
+            b"/Applications/UTM.app/Contents/Frameworks/qemu-sparc-softmmu.framework/Versions/A/qemu-sparc-softmmu "
+            b"-name 'Sun Solaris 9' -chardev socket,id=term0,host=127.0.0.1,port=4449,server=on,wait=off "
+            b"-serial chardev:term0\n",
+            b"",
+        )
+
+    host = ConsoleHost("teddeck", "teddeck", "darwin", "ryan@teddeck", (), (4449,))
+    report = await ConsoleDiscovery((host,), runner=runner).discover()
+
+    assert report.errors == {}
+    assert len(report.targets) == 1
+    assert report.targets[0].endpoint == "tcp://127.0.0.1:4449"
+    assert report.targets[0].endpoint_kind == "tcp"
+    assert report.targets[0].qemu_name == "Sun Solaris 9"
+
+
+@pytest.mark.asyncio
 async def test_discovery_reports_timeout_without_losing_other_hosts() -> None:
     async def runner(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
         if "root@slow" in argv:
@@ -286,3 +339,17 @@ def test_discovery_builds_local_and_ssh_connectors() -> None:
     connector = discovery.connector(remote_target)
     assert isinstance(connector, ArgvConsoleConnector)
     assert connector.argv[-4:] == ("root@ec2trib", "/usr/bin/socat", "-", "UNIX-CONNECT:/runs/b.sock")
+
+    teddeck = ConsoleHost("teddeck", "teddeck", "darwin", "ryan@teddeck", (), (4449,))
+    tcp_target = ConsoleTarget.create_tcp(
+        host_id="teddeck",
+        tcp_host="127.0.0.1",
+        tcp_port=4449,
+        pid=901,
+        started_at="start",
+        command="qemu-sparc-softmmu",
+        qemu_name="Sun Solaris 9",
+    )
+    tcp_connector = ConsoleDiscovery((teddeck,)).connector(tcp_target)
+    assert isinstance(tcp_connector, ArgvConsoleConnector)
+    assert tcp_connector.argv[-4:] == ("ryan@teddeck", "/usr/bin/nc", "127.0.0.1", "4449")

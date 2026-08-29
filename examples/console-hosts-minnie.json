@@ -20,6 +20,15 @@
     ]
   },
   {
+    "id": "teddeck",
+    "label": "teddeck",
+    "platform": "darwin",
+    "ssh_target": "ryan@teddeck",
+    "allowed_tcp_ports": [
+      4449
+    ]
+  },
+  {
     "id": "niagara-playbox",
     "label": "niagara-playbox",
     "platform": "linux",

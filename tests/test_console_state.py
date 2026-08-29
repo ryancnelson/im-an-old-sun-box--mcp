@@ -42,6 +42,17 @@ async def test_operator_state_persists_selected_target(tmp_path) -> None:
     reloaded.load()
     assert reloaded.selected_target == identity
     assert json.loads(path.read_text())["selected_target"]["pid"] == 343827
+    assert json.loads(path.read_text())["selected_target"]["endpoint"] == "/runs/console.sock"
+
+
+def test_operator_state_loads_legacy_socket_identity(tmp_path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text(
+        '{"mcp_write_blocked":true,"selected_target":{"host_id":"lab","socket_path":"/runs/console.sock","pid":10,"started_at":"start"}}'
+    )
+    state = OperatorState(path)
+    state.load()
+    assert state.selected_target == SelectedTargetIdentity("lab", "/runs/console.sock", 10, "start")
 
 
 def test_invalid_selected_target_fails_closed(tmp_path) -> None:

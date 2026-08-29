@@ -13,23 +13,27 @@ import tempfile
 @dataclass(frozen=True)
 class SelectedTargetIdentity:
     host_id: str
-    socket_path: str
+    endpoint: str
     pid: int
     started_at: str
 
     @classmethod
     def from_json(cls, value: object) -> "SelectedTargetIdentity":
-        if not isinstance(value, dict) or set(value) != {"host_id", "socket_path", "pid", "started_at"}:
+        if not isinstance(value, dict):
+            raise ValueError("invalid selected target")
+        keys = set(value)
+        legacy = keys == {"host_id", "socket_path", "pid", "started_at"}
+        if not legacy and keys != {"host_id", "endpoint", "pid", "started_at"}:
             raise ValueError("invalid selected target")
         host_id = value["host_id"]
-        socket_path = value["socket_path"]
+        endpoint = value["socket_path"] if legacy else value["endpoint"]
         pid = value["pid"]
         started_at = value["started_at"]
         if (
             not isinstance(host_id, str)
             or not host_id
-            or not isinstance(socket_path, str)
-            or not socket_path.startswith("/")
+            or not isinstance(endpoint, str)
+            or not endpoint
             or isinstance(pid, bool)
             or not isinstance(pid, int)
             or pid <= 0
@@ -37,7 +41,7 @@ class SelectedTargetIdentity:
             or not started_at
         ):
             raise ValueError("invalid selected target")
-        return cls(host_id, socket_path, pid, started_at)
+        return cls(host_id, endpoint, pid, started_at)
 
 
 class OperatorState:

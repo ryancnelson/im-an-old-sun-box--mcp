@@ -29,7 +29,7 @@ class ConsoleTargetManager:
     def _identity(target: ConsoleTarget) -> SelectedTargetIdentity:
         return SelectedTargetIdentity(
             target.host_id,
-            str(target.socket_path),
+            target.endpoint,
             target.pid,
             target.started_at,
         )
@@ -39,7 +39,9 @@ class ConsoleTargetManager:
         return {
             "target_id": target.target_id,
             "host_id": target.host_id,
-            "socket_path": str(target.socket_path),
+            "socket_path": str(target.socket_path) if target.socket_path is not None else None,
+            "endpoint": target.endpoint,
+            "endpoint_kind": target.endpoint_kind,
             "pid": target.pid,
             "started_at": target.started_at,
             "qemu_name": target.qemu_name,
