@@ -1,0 +1,20 @@
+when:
+  - event: push
+
+steps:
+  - name: pytest-illumos
+    image: bash
+    commands:
+      - >
+        ssh -o BatchMode=yes ec2trib
+        'set -eu;
+        WORKDIR=/tmp/im-an-old-sun-box-mcp-ci;
+        rm -rf "$WORKDIR";
+        git clone --branch '"$CI_COMMIT_BRANCH"' --depth 1
+        https://github.com/ryancnelson/im-an-old-sun-box--mcp.git "$WORKDIR";
+        cd "$WORKDIR";
+        python3 -m venv .venv;
+        AR=/usr/gnu/bin/ar AR_x86_64_unknown_illumos=/usr/gnu/bin/ar .venv/bin/pip install -q -e ".[test]";
+        .venv/bin/pytest -q;
+        cd /tmp;
+        rm -rf "$WORKDIR"'
