@@ -124,11 +124,13 @@ ps -axo pid=,lstart=,command= | while read -r pid dow mon day clock year command
 done
 """,
     "illumos": b"""# OLD_SUN_DISCOVERY_V1 illumos
-/usr/bin/ps -eo pid,lstart,args | while read -r pid dow mon day clock year command; do
-    case "$command" in *qemu-system-*)
-        printf '%s\\t%s %s %s %s %s\\t%s\\n' "$pid" "$dow" "$mon" "$day" "$clock" "$year" "$command"
-        ;;
-    esac
+for pid in $(/usr/bin/pgrep -f qemu-system- 2>/dev/null); do
+    command=$(/usr/bin/pargs -l "$pid" 2>/dev/null) || continue
+    executable=${command%% *}
+    case "${executable##*/}" in qemu-system-*) ;; *) continue ;; esac
+    started=$(/usr/bin/ps -p "$pid" -o stime= 2>/dev/null) || continue
+    [ -n "$started" ] || continue
+    printf '%s\\t%s\\t%s\\n' "$pid" "$started" "$command"
 done
 """,
 }

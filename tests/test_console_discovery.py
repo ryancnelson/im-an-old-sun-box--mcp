@@ -177,6 +177,42 @@ async def test_discovery_filters_processes_roots_and_invalid_sockets() -> None:
 
 
 @pytest.mark.asyncio
+async def test_illumos_discovery_uses_pargs_for_complete_qemu_argv() -> None:
+    discovery_script = b""
+
+    async def runner(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
+        nonlocal discovery_script
+        if b"OLD_SUN_DISCOVERY_V1" in stdin:
+            discovery_script = stdin
+            return CommandResult(
+                0,
+                b"63315\t06:24:55\t/usr/bin/qemu-system-sparc -name 'Sun Solaris 9 (SS-5)' "
+                b"-serial unix:/tink/runs/sun4m-solaris9/run/console.sock,server=on,wait=off\n",
+                b"",
+            )
+        return CommandResult(
+            0,
+            b"/tink/runs/sun4m-solaris9/run/console.sock\t0\n",
+            b"",
+        )
+
+    host = ConsoleHost(
+        host_id="ec2trib",
+        label="ec2trib",
+        platform="illumos",
+        ssh_target="root@ec2trib",
+        allowed_socket_roots=(PurePosixPath("/tink/runs"),),
+    )
+    report = await ConsoleDiscovery((host,), runner=runner).discover()
+
+    assert len(report.targets) == 1
+    assert report.targets[0].qemu_name == "Sun Solaris 9 (SS-5)"
+    assert b"/usr/bin/pgrep" in discovery_script
+    assert b"/usr/bin/pargs -l" in discovery_script
+    assert b"lstart" not in discovery_script
+
+
+@pytest.mark.asyncio
 async def test_discovery_reports_timeout_without_losing_other_hosts() -> None:
     async def runner(argv: tuple[str, ...], stdin: bytes, timeout: float) -> CommandResult:
         if "root@slow" in argv:
