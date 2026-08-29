@@ -3,7 +3,16 @@ when:
 
 steps:
   - name: pytest
-    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    image: bash
     commands:
-      - uv sync --extra test
-      - uv run pytest -q
+      - >
+        ssh -o BatchMode=yes rcn-exa-01
+        'set -eu;
+        WORKDIR=/tmp/im-an-old-sun-box-mcp-ci;
+        rm -rf "$WORKDIR";
+        git clone --branch '"$CI_COMMIT_BRANCH"' --depth 1
+        https://github.com/ryancnelson/im-an-old-sun-box--mcp.git "$WORKDIR";
+        cd "$WORKDIR";
+        ~/.local/bin/uv sync --extra test;
+        ~/.local/bin/uv run pytest -q;
+        rm -rf "$WORKDIR"'
