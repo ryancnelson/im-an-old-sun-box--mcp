@@ -1,0 +1,18 @@
+when:
+  - event: manual
+    branch: manual-proof-ec2trib
+
+steps:
+  - name: prove-ec2trib-reachable
+    image: bash
+    commands:
+      - >
+        ssh -o BatchMode=yes ec2trib
+        'set -eu;
+        printf "host="; hostname;
+        printf "os="; uname -a;
+        printf "python3="; command -v python3 || echo missing;
+        printf "caddy="; command -v caddy || echo missing;
+        printf "svcs_smf="; command -v svcs || echo missing;
+        test -d /tink || { echo "/tink missing"; exit 1; };
+        echo ec2trib-reachable-ok'
