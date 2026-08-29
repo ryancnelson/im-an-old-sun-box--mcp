@@ -4,6 +4,7 @@ html, body { height: 100%; margin: 0; background: #050705; color: #d4ffd4; }
 body { display: flex; flex-direction: column; }
 header { background: #101510; border-bottom: 1px solid #294029; }
 .header-primary { display: flex; gap: .75rem; align-items: center; min-height: 3rem; padding: .5rem 1rem .3rem; flex-wrap: wrap; }
+#connection { flex: 0 0 20ch; white-space: nowrap; }
 .target-controls { display: flex; gap: .35rem; align-items: center; }
 .target-controls select { max-width: 22rem; color: #d4ffd4; background: #101510; border: 1px solid #4f8f4f; padding: .35rem; }
 .target-controls button { color: #d4ffd4; background: #182218; border: 1px solid #4f8f4f; border-radius: .25rem; padding: .35rem .55rem; }

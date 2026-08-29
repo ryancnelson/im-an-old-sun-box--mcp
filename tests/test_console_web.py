@@ -142,6 +142,7 @@ def test_loopback_dev_login_and_authenticated_state(tmp_path) -> None:
         assert "Liberation Mono" in app_javascript
         assert "Gallant12" not in app_javascript
         assert "Gallant12" not in stylesheet
+        assert "#connection { flex: 0 0 20ch; white-space: nowrap; }" in stylesheet
         assert 'id="host-select"' in response.text
         assert 'id="console-select"' in response.text
         assert 'id="refresh-targets"' in response.text
