@@ -1,16 +1,23 @@
 # Authenticated shared console
 
+> **Deployment decision (2026-09-01):** The public deployment described here
+> is superseded by the static Tailcat design in
+> `2026-09-01-tailcat-console-transport.md`. `console.unix.wtf` is reserved for
+> that SPA. This document still governs the loopback broker, local MCP control
+> socket, and persistent MCP-write block.
+
 ## Goal
 
-Publish the live QEMU serial console at `https://console.unix.wtf` for Ryan and
-the local MCP without making guest networking part of the control plane.
+Give Ryan and the local MCP a shared, loopback-only QEMU serial console without
+making guest networking part of the control plane.
 
 ## Selected design
 
-Caddy is the only public listener. It obtains and renews TLS certificates and
-proxies HTTP and WebSocket traffic to a loopback-only Python service. The
-Python service performs GitHub OAuth itself and accepts only the configured
-GitHub login and immutable numeric user ID.
+For local use, the Python service binds only to loopback and does not need a
+public proxy. The superseded public design placed Caddy in front of it for TLS
+and used GitHub OAuth pinned to a login and immutable numeric user ID; those
+parts are retained here as historical constraints, not the current deployment
+target.
 
 One broker owns the console transport. The transport is either a local QEMU
 Unix socket or a fixed argv adapter for an SSH-accessible host. Browser clients

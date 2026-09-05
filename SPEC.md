@@ -586,6 +586,11 @@ An optional web console MAY own a validated run's `console.sock` and provide
 browser and MCP clients with a shared view. It MUST preserve the out-of-band
 control boundary and MUST NOT depend on guest networking.
 
+The current deployment target for this broker is loopback-only. The
+`console.unix.wtf` origin is reserved for the static Tailcat application in
+Section 15.3. If this authenticated broker is deployed publicly in the future,
+it MUST use a distinct origin and satisfy the following public-service rules.
+
 The public HTTP service MUST bind to loopback behind a TLS reverse proxy. Human
 access MUST use GitHub OAuth authorization-code flow and MUST compare both the
 returned login and immutable numeric user ID with configured allowlist values.
@@ -616,6 +621,68 @@ identity pin is absent.
 A development mode MAY bypass OAuth only when the HTTP listener is explicitly
 bound to an IP loopback address. Startup MUST reject development mode on a
 wildcard, hostname, or non-loopback bind.
+
+### 15.3 Tailcat console transport
+
+An optional console-sharing helper MAY make a serial-console Unix stream
+socket available to a remote browser or MCP agent through Tailcat. The console
+source MAY be QEMU, VMware, UTM, a container, a physical serial adapter, or any
+other producer that can present the same byte-stream contract. Provisioning
+and source discovery are outside the first implementation boundary.
+
+The hosted application MUST be static. Tailcat MUST run inside the browser,
+and console bytes MUST travel between the browser and local helper without
+passing through the static application's HTTP origin. The page MUST NOT send a
+Tailcat address or console contents to analytics, error reporting, server APIs,
+URLs, cookies, or browser storage. The address MUST remain in page memory and
+MUST be cleared by reload or navigation.
+
+The canonical hosted origin is `https://console.unix.wtf/`. It MUST serve only
+the static application and MUST NOT expose the authenticated broker from
+Section 15.2, a console API, or a server-side Tailcat process.
+
+The publisher MUST accept exactly one of two explicit modes: connect to an
+existing Unix stream socket, or create a Unix stream socket and wait for its
+producer. Listen mode MUST refuse to replace a path that is not a socket and
+MUST remove only a socket created by the current publisher process. The publisher
+MUST relay bytes unchanged in both directions and MUST propagate EOF and
+half-close without inventing terminal framing.
+
+Each publisher start MUST create a fresh in-memory Tailcat server key and address.
+The publisher MUST NOT persist the key or reuse an address after restart. The
+address is the sole session capability; the static site requires no account or
+login. The publisher MUST allow only one active consumer connection, MUST
+reject a second simultaneous connection, and MAY accept a replacement after
+the active browser or MCP session disconnects. Exiting the publisher MUST close
+the Tailcat server, the console connection, and any listener it created.
+
+The browser client MUST use a pinned, reviewed Tailcat WebAssembly build and a
+bounded xterm.js scrollback. It MUST disclose connection progress, DERP-only
+browser transport, disconnection, and terminal errors without claiming that
+the console source or guest is healthy. Tailcat's public DERP service MUST be
+treated as best-effort infrastructure with no availability or throughput
+guarantee. The design MAY later accept a configured DERP map, but MUST NOT
+silently turn a page-supplied URL into executable or privileged local input.
+
+The MCP distribution MAY include a native Tailcat client as a managed helper
+binary. When present, Tailcat is a built-in console transport: the user MUST
+NOT need a separate Tailcat installation or command. An external provisioner
+MAY return a logical run identity and fresh Tailcat address for runtime attach;
+the MCP MUST NOT depend on how that run was created.
+
+Runtime attach MUST require a reason and MUST return an opaque local session
+identifier. The Tailcat address MUST remain separate from run identity and
+MUST NOT appear in process arguments, environment variables, persistent
+configuration, evidence records, envelopes, logs, tracebacks, or error text.
+The MCP MAY pass it to the managed client through a private inherited pipe that
+is closed immediately after startup.
+
+An attached session MUST support status, bounded read, reason-required write,
+and detach. Console history MUST remain bounded and in memory. Detach and MCP
+shutdown MUST close the managed client and prove bounded child-process cleanup.
+Transport loss MUST disable writes and return a typed error without claiming
+that the remote run stopped. Browser and MCP consumers share the publisher's
+one-client limit; neither receives priority or preempts the other.
 
 ## 16. Definition of done
 

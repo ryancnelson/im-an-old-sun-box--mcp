@@ -19,24 +19,25 @@ sense.
 
 ## Ready
 
-### SUN-011 — Authenticated shared web console
+### SUN-011 — Local authenticated shared console broker
 
 - **Status:** active
 - **Owner:** Codex with Ryan Nelson
 - **Branch:** `codex/sun-011-authenticated-console`
 - **SPEC:** Section 15.2
 - **Depends on:** SUN-001 and one validated live `console.sock`
-- **Why:** Ryan and the MCP need an out-of-band console that remains usable
+- **Scope revision:** The former public OAuth deployment at
+  `console.unix.wtf` is superseded by SUN-004. That origin is reserved for the
+  static Tailcat SPA; SUN-011 retains the local broker and MCP-write policy.
+- **Why:** Ryan and the MCP need a local out-of-band console that remains usable
   while guest networking is absent, with the human retaining unconditional
   input and an explicit persistent switch that can block MCP input.
-- **Acceptance:** `console.unix.wtf` uses managed TLS and GitHub OAuth restricted
-  to Ryan's immutable GitHub identity; an xterm.js client can read and type;
-  the same app can run loopback-only on minnie against a local Unix socket or a
-  fixed SSH console adapter;
+- **Acceptance:** The app runs loopback-only on minnie against a local Unix
+  socket or a fixed SSH console adapter; an xterm.js client can read and type;
   the MCP can read and conditionally type through an authenticated local
   control socket; the human's MCP-write block persists across browser and
-  broker restarts; rejected OAuth, blocked MCP writes, reconnects, and the live
-  QEMU console path are tested and documented.
+  broker restarts; blocked MCP writes, reconnects, loopback enforcement, and
+  the live QEMU console path are tested and documented.
 
 ### SUN-003 — Add the first live host trace recipe
 
@@ -109,21 +110,47 @@ sense.
   validate discovery, read, write, reconnect, and concurrent-client behavior
   against a disposable UTM VM.
 
-### SUN-004 — Cross-host out-of-band relay
+### SUN-004 — Tailcat out-of-band console transport
 
-- **Status:** idea
-- **SPEC:** Sections 3 and 15
-- **Question:** Which transport preserves local tool contracts while remaining
-  independent of guest networking?
-- **Promotion gate:** Threat model, authentication, transport choice, and a
-  failure/cleanup contract are written down.
+- **Status:** ready
+- **SPEC:** Sections 3 and 15.3
+- **Design:** `docs/design-plans/2026-09-01-tailcat-console-transport.md`
+- **Handoff:** `docs/design-plans/2026-09-04-new-delegate-tailcat-browser-console.md`
+- **Plan:** `docs/plans/2026-09-01-tailcat-console-transport.md`
+- **Depends on:** SUN-001
+- **Why:** A user should be able to expose any serial-console Unix socket to a
+  browser or MCP agent without opening an inbound port, enrolling in a tailnet,
+  or sending console traffic through this project's web server.
+- **Selected design:** A local Go helper gives one explicit Unix stream socket
+  a fresh Tailcat address. A static page runs Tailcat in WebAssembly and joins
+  that address directly through DERP. The MCP manages a bundled native Go
+  client as a built-in console transport. The address is the session
+  capability, one consumer may attach at a time, and the publisher supports
+  explicit connect and listen socket modes.
+- **Acceptance:** Fake-socket tests prove byte-exact bidirectional relay,
+  single-browser ownership, reconnect after disconnect, fresh-address
+  invalidation on exit, safe listen-socket cleanup, and bounded shutdown. A
+  browser test proves xterm.js input and output through Tailcat WebAssembly
+  without any console request reaching the static origin. MCP tests prove
+  runtime attach, capability redaction, bounded reads, writes, detach, and
+  child-process cleanup. A live test covers one QEMU or equivalent serial
+  socket from both consumer paths. Shipped artifacts pin Tailcat, include
+  required licenses, and document that browser traffic uses DERP and that the
+  hosted relay has no stability or throughput guarantee. The tested static
+  artifact is served at `https://console.unix.wtf/`, whose access logs contain
+  only expected asset requests and no Tailcat identifier or console data.
 
-### SUN-005 — QMP support
+### SUN-005 — Expand QMP support
 
 - **Status:** idea
 - **SPEC:** Section 15
-- **Question:** Which typed QMP queries materially improve evidence over HMP?
-- **Promotion gate:** Initial command allowlist and schemas are proposed.
+- **Current boundary:** Typed `query-status` is available for QMP-backed runs,
+  and debugger cleanup uses `stop` and `cont` internally. Arbitrary QMP
+  execution is not exposed.
+- **Question:** Which additional typed QMP queries materially improve evidence
+  over HMP?
+- **Promotion gate:** An allowlist and response schema are proposed for each
+  additional command.
 
 ### SUN-006 — Guest-native DTrace recipes
 
@@ -164,6 +191,43 @@ sense.
 - **Promotion gate:** Prove the dump format and offline debugger path; define
   the freeze, seal, verify, enqueue, launch, and rollback state machine; and
   test every interruption point without destroying the only recoverable run.
+
+### SUN-014 — Agent-native serial terminal tools
+
+- **Status:** idea
+- **GTD:** `ryan/gtd#3671`
+- **Depends on:** SUN-004
+- **Why:** An agent harness should be able to operate a remote serial console as
+  a stateful terminal even when the target cannot run a modern agent runtime or
+  expose SSH. Targets include NextSTEP/m68k, Solaris/SPARC, network devices,
+  firmware, installers, and bootloaders.
+- **Selected direction:** Start with honest raw-terminal operations for attach,
+  observe, send, wait, interrupt, and detach. Add command profiles later for
+  environments that can prove stronger semantics, such as POSIX sentinel and
+  exit-status framing, Cisco prompt and pager handling, or OpenBoot completion.
+- **Question:** Which terminal state, cursor, history, timeout, mutation, and
+  interruption contracts let an agent act effectively without pretending that
+  every serial endpoint is Bash?
+- **Promotion gate:** Define the stateful tool schemas, raw terminal model,
+  interrupt semantics, output bounds, failure behavior, and fake-console test
+  matrix. Specify the profile interface without implementing a profile in the
+  raw-terminal milestone.
+
+### SUN-015 — QEMU-native Tailcat console publishing
+
+- **Status:** idea
+- **GTD:** `ryan/gtd#3671`
+- **Depends on:** SUN-004
+- **Why:** QEMU could publish a fresh Tailcat console address as part of VM
+  startup, binding the console transport to the VM lifecycle and eliminating a
+  separate publisher command for QEMU users.
+- **Question:** Should QEMU expose a Tailcat chardev backed by a managed sidecar,
+  link a Go-built component, or leave the existing Unix-socket publisher as the
+  integration boundary?
+- **Promotion gate:** Compare QEMU chardev and lifecycle requirements, build and
+  portability costs, capability disclosure, upstream acceptability, crash
+  cleanup, and testability. Prototype the smallest viable integration without
+  reimplementing Tailcat's Go data plane in C.
 
 ## History
 

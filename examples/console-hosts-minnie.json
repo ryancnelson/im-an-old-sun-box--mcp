@@ -39,6 +39,15 @@
     ]
   },
   {
+    "id": "hp2",
+    "label": "hp2",
+    "platform": "linux",
+    "ssh_target": "ryan@hp2",
+    "allowed_socket_roots": [
+      "/tmp"
+    ]
+  },
+  {
     "id": "ec2trib",
     "label": "ec2trib",
     "platform": "illumos",

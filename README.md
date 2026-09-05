@@ -17,11 +17,34 @@ without turning the normative docs into Friday-night word salad.
 and the SSH stdio path from another machine.
 
 The authenticated browser console can discover live QEMU serial endpoints on
-the five current lab hosts, switch the one shared browser/MCP target, and retain the
+the six current lab hosts, switch the one shared browser/MCP target, and retain the
 human-controlled MCP write block across restarts. Discovery uses Minnie's SSH
 agent and fixed host profiles; guest networking is not involved. See the
 [operator guide](docs/OPERATIONS.md#multi-host-browser-console) and the
 [example host registry](examples/console-hosts-minnie.json).
+
+## Console control with mcporter
+
+Use the generated MCP CLI for scripted console reads and writes. Browser
+automation is not the operator interface.
+
+```bash
+/private/tmp/old-sun-console-cli.mjs -o json guest-console-targets
+/private/tmp/old-sun-console-cli.mjs -o json guest-console-select-target \
+  --target-id TARGET_ID --reason 'Select the intended QEMU console'
+/private/tmp/old-sun-console-cli.mjs -o json guest-console-read \
+  --max-bytes 4096
+/private/tmp/old-sun-console-cli.mjs -o json guest-console-write \
+  --raw '{"reason":"Send an operator command","text":"COMMAND\r"}'
+```
+
+After QEMU restarts, run `guest-console-targets` again and select the new
+target ID. A broker can retain the dead process identity until it rediscovers
+the replacement.
+
+The broker token changes whenever the browser-console service restarts. Use
+the maintained credential launcher or handoff file. Do not recover the token
+from another process's environment or put it in command-line arguments.
 
 The point is not to give an agent a polite little remote shell and pretend an
 ancient Solaris guest is a normal cloud VM. The point is to let the agent
@@ -186,7 +209,7 @@ across the virtualization boundary, now we're cooking.
 **The portable 0.1 core is implemented, and the first live profile is proven.**
 Strict configuration, validated run identity, guest/HMP/QMP/host adapters,
 immutable evidence and hypothesis history, and the MCP stdio server are covered
-by 58 tests. CI runs the portable suite on macOS and Linux.
+by the automated test suite. CI runs the portable suite on macOS and Linux.
 
 The Niagara profile has also been exercised against a live QEMU 10.2 run. It
 proved the exact PID, queried QMP over a private Unix socket, captured SPARC v9

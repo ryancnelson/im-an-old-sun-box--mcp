@@ -9,6 +9,9 @@ build/
 .old-sun-mcp.toml
 worktrees/
 
+# Private deployment notes derived from the Nelson wiki.
+docs/private/console-unix-wtf-maplewood.md
+
 # Lab runtime artifacts never belong in source control.
 *.pid
 *.sock

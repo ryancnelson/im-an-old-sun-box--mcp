@@ -20,6 +20,7 @@ def test_example_console_registry_contains_lab_hosts() -> None:
         "minnie-2-2": "darwin",
         "teddeck": "darwin",
         "niagara-playbox": "linux",
+        "hp2": "linux",
         "ec2trib": "illumos",
     }
     assert hosts["minnie-2-2"]["local"] is True
