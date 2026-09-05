@@ -1,5 +1,6 @@
 when:
-  - event: push
+  - event: manual
+    branch: manual-test-illumos
 
 steps:
   - name: pytest-illumos

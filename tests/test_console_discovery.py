@@ -331,14 +331,15 @@ async def test_revalidation_rejects_changed_process_identity() -> None:
 def test_discovery_builds_local_and_ssh_connectors() -> None:
     local = _host("minnie", local=True)
     remote = _host("ec2trib")
-    local_target = type("Target", (), {"host_id": "minnie", "socket_path": PurePosixPath("/runs/a.sock")})()
-    remote_target = type("Target", (), {"host_id": "ec2trib", "socket_path": PurePosixPath("/runs/b.sock")})()
+    local_target = type("Target", (), {"host_id": "minnie", "socket_path": PurePosixPath("/runs/a.sock"), "container_id": None})()
+    remote_target = type("Target", (), {"host_id": "ec2trib", "socket_path": PurePosixPath("/runs/b.sock"), "container_id": None})()
     discovery = ConsoleDiscovery((local, remote))
 
     assert isinstance(discovery.connector(local_target), UnixConsoleConnector)
     connector = discovery.connector(remote_target)
     assert isinstance(connector, ArgvConsoleConnector)
-    assert connector.argv[-4:] == ("root@ec2trib", "/usr/bin/socat", "-", "UNIX-CONNECT:/runs/b.sock")
+    assert connector.argv[-2:] == ("root@ec2trib", "/usr/bin/socat -d -d - UNIX-CONNECT:/runs/b.sock")
+    assert connector.ready_marker == b"starting data transfer loop"
 
     teddeck = ConsoleHost("teddeck", "teddeck", "darwin", "ryan@teddeck", (), (4449,))
     tcp_target = ConsoleTarget.create_tcp(
@@ -352,4 +353,4 @@ def test_discovery_builds_local_and_ssh_connectors() -> None:
     )
     tcp_connector = ConsoleDiscovery((teddeck,)).connector(tcp_target)
     assert isinstance(tcp_connector, ArgvConsoleConnector)
-    assert tcp_connector.argv[-4:] == ("ryan@teddeck", "/usr/bin/nc", "127.0.0.1", "4449")
+    assert tcp_connector.argv[-2:] == ("ryan@teddeck", "/usr/bin/nc 127.0.0.1 4449")

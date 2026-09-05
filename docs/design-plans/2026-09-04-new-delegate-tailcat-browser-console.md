@@ -1,5 +1,11 @@
 # new-delegate and the Tailcat browser console
 
+> Subsequent owner decision: use GitHub OAuth restricted to `ryancnelson`
+> (numeric ID `347171`). The static Go/WASM terminal remains the data path;
+> a small authentication/invitation service handles owner-only deep links.
+> See `2026-09-04-pipeline-console-discovery.md`. The SSH-key proof and encrypted
+> query experiments were superseded; no private SSH key is required.
+
 ## Product intent
 
 `https://console.unix.wtf/` will be a static single-page application that can

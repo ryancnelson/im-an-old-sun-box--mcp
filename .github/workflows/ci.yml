@@ -18,6 +18,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --extra test
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y socat
+      - if: runner.os == 'macOS'
+        run: command -v socat || brew install socat
       - run: uv run pytest -q
+      - run: node --test tests/console_directory.test.cjs
       - run: uv run python -m build
-

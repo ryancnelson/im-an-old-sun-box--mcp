@@ -27,23 +27,48 @@ const activeTransport = document.getElementById("active-transport");
 const activePid = document.getElementById("active-pid");
 let targets = [];
 let currentTarget = null;
+let discoveryPending = false;
+let discoveryTimer = null;
+let discoveryErrors = new Map();
+let qemuConnected = false;
+let connectionError = null;
 const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-const socket = new WebSocket(`${protocol}//${location.host}/ws/console`);
-socket.binaryType = "arraybuffer";
+let socket;
+let reconnectTimer;
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-socket.onopen = () => { status.textContent = "broker connected"; };
-socket.onclose = () => { status.textContent = "browser disconnected"; };
+const connectBrowser = () => {
+const next = new WebSocket(`${protocol}//${location.host}/ws/console`);
+socket = next;
+socket.binaryType = "arraybuffer";
+socket.onopen = () => { terminal.reset(); status.textContent = "broker connected"; };
+socket.onclose = (event) => {
+  if (socket !== next) return;
+  qemuConnected = false;
+  clearTimeout(reconnectTimer);
+  if (event.code === 4403) {
+    status.textContent = "sign in to reconnect";
+    return;
+  }
+  status.textContent = "browser disconnected; reconnecting";
+  reconnectTimer = setTimeout(connectBrowser, 1000);
+};
 socket.onerror = () => { status.textContent = "connection error"; };
 socket.onmessage = async (event) => {
+  if (socket !== next) return;
   if (typeof event.data === "string") {
     const message = JSON.parse(event.data);
     if (message.type === "status") {
+      qemuConnected = message.connected;
       status.textContent = message.connected ? "QEMU connected" : "QEMU disconnected";
+      if (message.error && message.error !== connectionError) terminal.write(`\r\n[connection failed: ${message.error}]\r\n`);
+      connectionError = message.error || null;
       block.checked = message.mcp_write_blocked;
       if (Object.hasOwn(message, "current_target")) updateActiveTarget(message.current_target, false);
     } else if (message.type === "target") {
+      qemuConnected = false;
+      status.textContent = "connecting to QEMU";
       terminal.reset();
       updateActiveTarget(message.target, true);
     } else if (message.type === "input_error") {
@@ -54,9 +79,10 @@ socket.onmessage = async (event) => {
   const data = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data;
   terminal.write(decoder.decode(data, { stream: true }));
 };
+};
 
 terminal.onData((data) => {
-  if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
+  if (qemuConnected && socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
 });
 block.addEventListener("change", () => {
   if (socket.readyState === WebSocket.OPEN) {
@@ -76,7 +102,7 @@ const updateActiveTarget = (target, announce) => {
     activeSocket.textContent = target.endpoint || target.socket_path;
     activeTransport.textContent = target.host_id === "minnie-2-2" ? `via local ${target.endpoint_kind || "unix"}` : `via SSH ${target.endpoint_kind || "unix"}`;
     activePid.textContent = `PID ${target.pid}`;
-    if (announce) terminal.write(`\r\n[broker: connected target ${target.host_id} PID ${target.pid} ${target.endpoint || target.socket_path}]\r\n`);
+    if (announce) terminal.write(`\r\n[broker: selected target ${target.host_id} PID ${target.pid} ${target.endpoint || target.socket_path}]\r\n`);
   }
   const lifecycleAvailable = target
     ? Boolean(target.capabilities?.lifecycle)
@@ -90,7 +116,7 @@ const populateConsoles = () => {
   targets.filter((target) => target.host_id === hostSelect.value).forEach((target) => {
     const option = document.createElement("option");
     option.value = target.target_id;
-    option.textContent = `${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.endpoint || target.socket_path}`;
+    option.textContent = `${target.container_name ? `${target.container_name} · ` : ""}${target.qemu_name || "QEMU"} · PID ${target.pid} · ${target.socket_path || target.endpoint}`;
     consoleSelect.append(option);
   });
   if (consoleSelect.options.length === 0) {
@@ -106,6 +132,9 @@ const populateConsoles = () => {
 };
 
 const loadTargets = async () => {
+  if (discoveryPending) return;
+  discoveryPending = true;
+  clearTimeout(discoveryTimer);
   refreshTargets.disabled = true;
   try {
     const response = await fetch("/api/targets");
@@ -123,13 +152,20 @@ const loadTargets = async () => {
     });
     if ([...hostSelect.options].some((option) => option.value === selectedHost)) hostSelect.value = selectedHost;
     populateConsoles();
+    const nextErrors = new Map();
     Object.entries(payload.errors).forEach(([hostId, error]) => {
-      terminal.write(`\r\n[discovery ${hostId}: ${error.kind}: ${error.message}]\r\n`);
+      const message = `${error.kind}: ${error.message}`;
+      nextErrors.set(hostId, message);
+      if (discoveryErrors.get(hostId) !== message) terminal.write(`\r\n[discovery ${hostId}: ${message}]\r\n`);
     });
+    discoveryErrors = nextErrors;
   } catch (error) {
-    terminal.write(`\r\n[discovery failed: ${error.message}]\r\n`);
+    if (discoveryErrors.get("request") !== error.message) terminal.write(`\r\n[discovery failed: ${error.message}]\r\n`);
+    discoveryErrors.set("request", error.message);
   } finally {
+    discoveryPending = false;
     refreshTargets.disabled = false;
+    discoveryTimer = setTimeout(loadTargets, 10000);
   }
 };
 
@@ -190,6 +226,7 @@ const refreshStats = async () => {
     vmStats.textContent = "statistics unavailable";
   }
 };
+connectBrowser();
 refreshStats();
 loadTargets();
 setInterval(refreshStats, 10000);

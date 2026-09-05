@@ -310,7 +310,7 @@ def create_console_app(
         return RedirectResponse("/", status_code=303)
 
     async def health(_: Request) -> Response:
-        return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "ok", "revision": os.environ.get("OLD_SUN_CONSOLE_REVISION", "development")})
 
     async def api_state(request: Request) -> Response:
         if not _authenticated(request.scope):
@@ -331,6 +331,8 @@ def create_console_app(
             "command": target.command,
             "qemu_name": target.qemu_name,
             "socket_mtime": target.socket_mtime,
+            "container_id": target.container_id,
+            "container_name": target.container_name,
         }
 
     async def api_targets(request: Request) -> Response:
@@ -463,6 +465,7 @@ def create_console_app(
                             "type": "status",
                             "connected": event.connected,
                             "mcp_write_blocked": event.mcp_write_blocked,
+                            "error": event.error,
                         }
                     )
                 elif event.kind == "target":

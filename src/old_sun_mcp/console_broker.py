@@ -46,6 +46,7 @@ class ConsoleEvent:
     connected: bool | None = None
     mcp_write_blocked: bool | None = None
     target: dict[str, object] | None = None
+    error: str | None = None
 
 
 class ConsoleBroker:
@@ -64,6 +65,7 @@ class ConsoleBroker:
         self.retry_seconds = retry_seconds
         self.max_write_bytes = max_write_bytes
         self.connected = False
+        self.error: str | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._write_lock = asyncio.Lock()
         self._replace_lock = asyncio.Lock()
@@ -100,6 +102,7 @@ class ConsoleBroker:
             await self._stop_connect_loop()
             self._set_connection(None)
             self.transport = replacement
+            self.error = None
             if clear_history:
                 self.history.clear()
             if running:
@@ -114,6 +117,7 @@ class ConsoleBroker:
             "connected": self.connected,
             "mcp_write_blocked": self.state.mcp_write_blocked,
             "history_bytes": len(self.history.bytes()),
+            "error": self.error,
         }
 
     def subscribe(self) -> asyncio.Queue[ConsoleEvent]:
@@ -134,6 +138,8 @@ class ConsoleBroker:
     def _set_connection(self, writer: asyncio.StreamWriter | None) -> None:
         self._writer = writer
         connected = writer is not None
+        if connected:
+            self.error = None
         if self.connected != connected:
             self.connected = connected
             self._broadcast(
@@ -141,8 +147,15 @@ class ConsoleBroker:
                     "status",
                     connected=connected,
                     mcp_write_blocked=self.state.mcp_write_blocked,
+                    error=self.error,
                 )
             )
+
+    def _set_error(self, error: str) -> None:
+        if self.error != error:
+            self.error = error
+            self._broadcast(ConsoleEvent("status", connected=False,
+                                         mcp_write_blocked=self.state.mcp_write_blocked, error=error))
 
     async def _connect_loop(self) -> None:
         while not self._stopping.is_set():
@@ -155,8 +168,13 @@ class ConsoleBroker:
                 while data := await endpoint.reader.read(4096):
                     self.history.append(data)
                     self._broadcast(ConsoleEvent("output", data=data))
-            except (FileNotFoundError, ConnectionError, OSError):
-                pass
+                raise ConnectionError(endpoint.error_detail() or "Console stream closed")
+            except ValueError as exc:
+                # A changed target identity requires explicit selection again.
+                self._set_error(str(exc))
+                return
+            except (FileNotFoundError, ConnectionError, OSError, RuntimeError) as exc:
+                self._set_error(str(exc) or type(exc).__name__)
             finally:
                 if endpoint is not None:
                     await endpoint.close()
@@ -173,6 +191,7 @@ class ConsoleBroker:
                 "status",
                 connected=self.connected,
                 mcp_write_blocked=blocked,
+                error=self.error,
             )
         )
 

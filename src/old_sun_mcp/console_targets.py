@@ -10,6 +10,18 @@ from .console_discovery import ConsoleDiscovery, ConsoleTarget, DiscoveryReport
 from .console_state import OperatorState, SelectedTargetIdentity
 
 
+class ValidatedTargetConnector:
+    """Retain the selected identity, including across broker reconnects."""
+
+    def __init__(self, discovery: ConsoleDiscovery, target: ConsoleTarget):
+        self.discovery = discovery
+        self.target = target
+
+    async def connect(self):
+        validated = await self.discovery.revalidate(self.target)
+        return await self.discovery.connector(validated).connect()
+
+
 class ConsoleTargetManager:
     def __init__(self, discovery: ConsoleDiscovery, broker: ConsoleBroker, state: OperatorState):
         self.discovery = discovery
@@ -45,6 +57,8 @@ class ConsoleTargetManager:
             "pid": target.pid,
             "started_at": target.started_at,
             "qemu_name": target.qemu_name,
+            "container_id": target.container_id,
+            "container_name": target.container_name,
             "capabilities": {"lifecycle": host.lifecycle_argv is not None},
         }
 
@@ -56,7 +70,7 @@ class ConsoleTargetManager:
             if selected is None:
                 raise ValueError("unknown or stale console target; refresh discovery")
             validated = await self.discovery.revalidate(selected)
-            await self.broker.replace_transport(self.discovery.connector(validated), clear_history=True)
+            await self.broker.replace_transport(ValidatedTargetConnector(self.discovery, validated), clear_history=True)
             await self.state.set_selected_target(self._identity(validated))
             self.current = validated
             self.broker.broadcast_target(self._event(validated))

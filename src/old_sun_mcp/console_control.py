@@ -78,6 +78,8 @@ class ConsoleControlServer:
             "command": target.command,
             "qemu_name": target.qemu_name,
             "socket_mtime": target.socket_mtime,
+            "container_id": target.container_id,
+            "container_name": target.container_name,
         }
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

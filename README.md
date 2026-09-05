@@ -17,7 +17,7 @@ without turning the normative docs into Friday-night word salad.
 and the SSH stdio path from another machine.
 
 The authenticated browser console can discover live QEMU serial endpoints on
-the six current lab hosts, switch the one shared browser/MCP target, and retain the
+the seven current lab hosts, switch the one shared browser/MCP target, and retain the
 human-controlled MCP write block across restarts. Discovery uses Minnie's SSH
 agent and fixed host profiles; guest networking is not involved. See the
 [operator guide](docs/OPERATIONS.md#multi-host-browser-console) and the
@@ -42,8 +42,8 @@ After QEMU restarts, run `guest-console-targets` again and select the new
 target ID. A broker can retain the dead process identity until it rediscovers
 the replacement.
 
-The broker token changes whenever the browser-console service restarts. Use
-the maintained credential launcher or handoff file. Do not recover the token
+The maintained launcher reuses an owner-private credential handoff across
+restarts. Use that handoff file. Do not recover the token
 from another process's environment or put it in command-line arguments.
 
 The point is not to give an agent a polite little remote shell and pretend an

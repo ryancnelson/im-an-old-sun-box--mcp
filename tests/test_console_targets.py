@@ -98,3 +98,18 @@ async def test_restore_requires_same_process_identity(tmp_path) -> None:
     assert await manager.restore() is None
     assert manager.current is None
     assert state.selected_target is None
+
+
+@pytest.mark.asyncio
+async def test_broker_reconnect_revalidates_before_opening_socket(tmp_path):
+    state = OperatorState(tmp_path / "state.json")
+    state.load()
+    broker = ConsoleBroker(None, state)
+    discovery = FakeDiscovery(target(), tmp_path / "missing.sock")
+    manager = ConsoleTargetManager(discovery, broker, state)
+    await manager.discover()
+    await manager.select(discovery.current.target_id)
+    discovery.current = target(pid=11, started_at="replacement")
+    # This must reject the old identity before attempting the local socket.
+    with pytest.raises(ValueError, match="stale"):
+        await broker.transport.connect()

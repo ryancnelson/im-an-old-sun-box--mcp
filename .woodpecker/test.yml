@@ -1,18 +1,32 @@
 when:
   - event: push
+  - event: manual
 
 steps:
-  - name: pytest
-    image: bash
+  - name: test-linux-amd64
+    # The local-backend agent uses its existing SSH identity to Biggie.
+    image: sh
     commands:
-      - >
-        ssh -o BatchMode=yes rcn-exa-01
-        'set -eu;
-        WORKDIR=/tmp/im-an-old-sun-box-mcp-ci;
-        rm -rf "$WORKDIR";
-        git clone --branch '"$CI_COMMIT_BRANCH"' --depth 1
-        https://github.com/ryancnelson/im-an-old-sun-box--mcp.git "$WORKDIR";
-        cd "$WORKDIR";
-        ~/.local/bin/uv sync --extra test;
-        ~/.local/bin/uv run pytest -q;
-        rm -rf "$WORKDIR"'
+      - ssh -o BatchMode=yes -o ConnectTimeout=10 biggie python3 - ${CI_COMMIT_SHA} test < scripts/console_ci.py
+
+  - name: test-darwin-arm64
+    image: sh
+    commands:
+      # Verified Tailscale IP avoids depending on MagicDNS inside the agent.
+      - ssh -o BatchMode=yes -o ConnectTimeout=10 biggie "ssh -o BatchMode=yes -o ConnectTimeout=10 -o HostKeyAlias=minnie-2-2 ryan@100.87.104.29 /opt/homebrew/bin/python3 - ${CI_COMMIT_SHA} test" < scripts/console_ci.py
+
+  - name: build
+    image: sh
+    depends_on: [test-linux-amd64, test-darwin-arm64]
+    commands:
+      - ssh -o BatchMode=yes -o ConnectTimeout=10 biggie python3 - ${CI_COMMIT_SHA} build < scripts/console_ci.py
+      - ssh -o BatchMode=yes -o ConnectTimeout=10 biggie "ssh -o BatchMode=yes -o ConnectTimeout=10 -o HostKeyAlias=minnie-2-2 ryan@100.87.104.29 /opt/homebrew/bin/python3 - ${CI_COMMIT_SHA} build" < scripts/console_ci.py
+
+  - name: deploy
+    image: sh
+    depends_on: [build]
+    when:
+      - branch: main
+        event: [push, manual]
+    commands:
+      - ssh -o BatchMode=yes -o ConnectTimeout=10 biggie "ssh -o BatchMode=yes -o ConnectTimeout=10 -o HostKeyAlias=minnie-2-2 ryan@100.87.104.29 /opt/homebrew/bin/python3 - ${CI_COMMIT_SHA} deploy" < scripts/console_ci.py

@@ -18,6 +18,25 @@ def test_bounded_history_retains_only_tail() -> None:
 
 
 @pytest.mark.asyncio
+async def test_broker_exposes_connection_failure_without_false_connected_status(tmp_path):
+    class Refused:
+        async def connect(self):
+            raise ConnectionError("Connection refused: console held by another client")
+    broker = ConsoleBroker(Refused(), OperatorState(tmp_path / "state.json"), retry_seconds=0.01)
+    queue = broker.subscribe()
+    await broker.start()
+    try:
+        for _ in range(20):
+            if broker.snapshot().get("error"): break
+            await asyncio.sleep(0.01)
+        assert "Connection refused" in broker.snapshot()["error"]
+        assert broker.connected is False
+        assert all(not event.connected for event in list(queue._queue))
+    finally:
+        await broker.stop()
+
+
+@pytest.mark.asyncio
 async def test_broker_reads_reconnects_and_enforces_actor_policy(tmp_path) -> None:
     socket_dir = tempfile.TemporaryDirectory(prefix="osc-", dir="/tmp")
     socket_path = Path(socket_dir.name) / "console.sock"

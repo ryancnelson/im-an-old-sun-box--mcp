@@ -6,7 +6,10 @@
     "ssh_target": "root@ec2cicd",
     "allowed_socket_roots": [
       "/var/lib/niagara-ci/experiments"
-    ]
+    ],
+    "docker_container_prefixes": ["sparc64-qemu-", "sun4u-openbios-", "solaris9-"],
+    "docker_socket_roots": ["/state", "/run", "/var/lib/illumos-appliance"],
+    "discovery_timeout_seconds": 20
   },
   {
     "id": "minnie-2-2",
@@ -32,11 +35,15 @@
     "id": "niagara-playbox",
     "label": "niagara-playbox",
     "platform": "linux",
-    "ssh_target": "niagara@niagara-playbox",
+    "ssh_target": "root@niagara-playbox",
     "allowed_socket_roots": [
       "/mnt/disk-images/runs",
+      "/mnt/disk-images/woodpecker",
       "/tmp"
-    ]
+    ],
+    "docker_container_prefixes": ["sparc64-qemu-", "sun4u-openbios-", "solaris9-"],
+    "docker_socket_roots": ["/state", "/run", "/var/lib/illumos-appliance"],
+    "discovery_timeout_seconds": 20
   },
   {
     "id": "hp2",
@@ -53,7 +60,18 @@
     "platform": "illumos",
     "ssh_target": "root@ec2trib",
     "allowed_socket_roots": [
-      "/tink/runs"
+      "/tink/runs",
+      "/tink/sun4m-solaris9/runs"
     ]
+  },
+  {
+    "id": "biggie",
+    "label": "biggie",
+    "platform": "linux",
+    "ssh_target": "ryan@biggie",
+    "allowed_socket_roots": ["/home/ryan/vms", "/datapool/vms", "/tmp"],
+    "docker_container_prefixes": ["sparc64-qemu-", "sun4u-openbios-", "solaris9-", "openindiana-"],
+    "docker_socket_roots": ["/state", "/run", "/var/lib/illumos-appliance"],
+    "discovery_timeout_seconds": 20
   }
 ]

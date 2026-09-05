@@ -56,6 +56,46 @@ does not expose arbitrary QMP execution.
 
 ## Multi-host browser console
 
+The maintained local launcher replaces temporary `/tmp` startup scripts:
+
+```bash
+.venv/bin/python -m old_sun_mcp.console_launcher \
+  --hosts examples/console-hosts-minnie.json --port 8877
+```
+
+It binds only to loopback and enables local development authentication. Private
+MCP/session credentials persist in `~/.local/state/old-sun-console/credentials.json`
+with mode 0600. Load the MCP token through the caller's maintained credential
+handoff; never pass it on a command line. `--state` and `--control-socket` preserve
+existing deployment paths when migrating a running broker. After migration from
+the old temporary launcher, MCP clients must load the new token. Browser cookies
+from the previous signing key require a new local development login.
+
+The dropdown refreshes ten seconds after each completed discovery. A new guest
+appears without a page reload; Connect remains explicit. Biggie is included in
+the sample registry, alongside the original lab hosts. Stopped pipeline guests
+disappear without scanning stale run directories.
+
+Docker discovery requires host-side Python 3, Docker permission, explicit
+`docker_container_prefixes` and `docker_socket_roots`. The sample registry uses
+the same root SSH identity on niagara-playbox as the pipelines. The fixed helper
+reads Docker state and exact Linux process argv; it never reads container
+environment variables or opens a console. Docker sockets are checked inside the
+container and attached with `docker exec -i ... python3` using the bundled
+stdlib Unix-socket relay (the guest image does not need socat). Interactive main-QEMU
+containers with open stdin and TTY use `docker attach --sig-proxy=false` instead.
+The latter shares Docker's terminal with any existing attached operator; it does
+not provide exclusive writer arbitration. Stdio-only native QEMU and libvirt PTY
+consoles are not socket targets and remain outside this provider.
+
+Native-host and Docker errors are independent. A failed Docker query appears
+under `host/docker` without hiding healthy host consoles. Host polling is bounded;
+Docker-enabled profiles have a 20-second discovery deadline. Every connection
+revalidates the selected instance. Replaced processes or sockets require a fresh
+selection instead of silently switching a running terminal to another guest.
+
+Run browser behavior tests with `node --test tests/console_directory.test.cjs`.
+
 The browser console can discover live QEMU serial endpoints on a fixed list of
 hosts. Use [the Minnie registry](../examples/console-hosts-minnie.json) as the
 starting configuration. Review its socket roots and TCP ports before starting

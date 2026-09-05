@@ -19,6 +19,41 @@ sense.
 
 ## Ready
 
+### SUN-016 — Pipeline consoles in the local directory
+
+- **Status:** active
+- **Owner:** Codex with Ryan Nelson
+- **Branch:** `codex/sun-016-pipeline-console-discovery`
+- **Design:** `docs/design-plans/2026-09-04-pipeline-console-discovery.md`
+- **Plan:** `docs/implementation-plans/2026-09-04-pipeline-console-discovery/phase_1.md`
+- **Acceptance:** Live native and containerized QEMU consoles on configured CI
+  hosts appear automatically in localhost:8877. Discovery never connects or
+  switches targets; stopped/replaced instances fail revalidation. Offline tests
+  cover provider isolation, configuration, identity and dropdown refresh; live
+  verification reads the deployed inventory without typing into guests.
+- **Delivery requirement (Ryan):** GitHub pushes trigger Biggie Woodpecker;
+  test on Linux amd64 and Darwin arm64, build/install the wheel on each, then
+  deploy only the current `main` revision to localhost:8877. Keep credentials
+  and operator state, verify deployed revision, and roll back failed startup.
+- **Live failures found:** ec2trib's single-client socket was held by a tmux
+  socat (transferred with Ryan's approval); Docker TTY attach rejected piped
+  stdin; Niagara's container lacks socat. Raw-PTY and Python socket relays,
+  readiness handshakes, bounded stderr and accurate UI status cover these.
+
+### SUN-017 — Owner-only GitHub OAuth console invitations
+
+- **Status:** idea
+- **Depends on:** SUN-004
+- **Request:** Builders emit console.unix.wtf deep links; GitHub OAuth authorizes
+  only `ryancnelson` with numeric user ID `347171`. This supersedes SSH-key proof.
+- **Boundary:** Same run identity as SUN-016, separate expiring invitation.
+  An authentication/control service redeems opaque session IDs only for the
+  owner. The browser Go/WASM client carries console traffic directly to Tailcat.
+- **Acceptance:** Other accounts denied; OAuth state and safe return URLs; expired
+  or replaced runs rejected; no plaintext codes in URLs/logs; automatic connection
+  after successful owner login and redemption. Builder registration is separately
+  authenticated. No personal SSH private keys are loaded by the site.
+
 ### SUN-011 — Local authenticated shared console broker
 
 - **Status:** active

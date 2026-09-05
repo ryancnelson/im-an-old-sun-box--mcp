@@ -622,6 +622,19 @@ A development mode MAY bypass OAuth only when the HTTP listener is explicitly
 bound to an IP loopback address. Startup MUST reject development mode on a
 wildcard, hostname, or non-loopback bind.
 
+### 15.2.1 Pipeline console directory
+
+The local console MAY discover native QEMU and Docker-contained QEMU on explicit
+trusted hosts. Container discovery MUST require configured name prefixes and
+container-local socket roots. It MUST preserve exact argv boundaries and bind
+identity to the full container ID, container start, QEMU PID/start, and socket
+device/inode. Interactive Docker stdio MAY be exposed only for a live main QEMU
+process with open stdin and TTY. Its connector MUST disable signal forwarding.
+Discovery MUST NOT attach, send guest input, or select a target. One provider's
+failure MUST NOT suppress healthy providers. Browser polling MUST NOT overlap
+or overwrite the operator's pending selection. Every broker reconnect MUST
+revalidate the selected instance and reject a replacement until explicitly selected.
+
 ### 15.3 Tailcat console transport
 
 An optional console-sharing helper MAY make a serial-console Unix stream
@@ -630,16 +643,22 @@ source MAY be QEMU, VMware, UTM, a container, a physical serial adapter, or any
 other producer that can present the same byte-stream contract. Provisioning
 and source discovery are outside the first implementation boundary.
 
-The hosted application MUST be static. Tailcat MUST run inside the browser,
+The hosted terminal assets MUST be static. Tailcat MUST run inside the browser,
 and console bytes MUST travel between the browser and local helper without
 passing through the static application's HTTP origin. The page MUST NOT send a
-Tailcat address or console contents to analytics, error reporting, server APIs,
+Tailcat address or console contents to analytics, error reporting,
 URLs, cookies, or browser storage. The address MUST remain in page memory and
 MUST be cleared by reload or navigation.
 
-The canonical hosted origin is `https://console.unix.wtf/`. It MUST serve only
-the static application and MUST NOT expose the authenticated broker from
-Section 15.2, a console API, or a server-side Tailcat process.
+The canonical hosted origin is `https://console.unix.wtf/`. Owner access MUST
+use GitHub OAuth pinned to login `ryancnelson` and numeric ID `347171`. A small
+authentication and invitation-control service MAY support static assets, but
+MUST NOT relay terminal bytes or run a server-side Tailcat client. Invitations
+MAY be registered by separately authenticated builders and redeemed by the
+owner. Deep links MUST contain only opaque session IDs; raw Tailcat capabilities
+MUST NOT appear in URLs. Responses containing capabilities MUST use no-store.
+All other GitHub accounts MUST be denied before receiving private run metadata
+or capabilities. This owner-only rule supersedes the earlier no-login design.
 
 The publisher MUST accept exactly one of two explicit modes: connect to an
 existing Unix stream socket, or create a Unix stream socket and wait for its
@@ -650,8 +669,8 @@ half-close without inventing terminal framing.
 
 Each publisher start MUST create a fresh in-memory Tailcat server key and address.
 The publisher MUST NOT persist the key or reuse an address after restart. The
-address is the sole session capability; the static site requires no account or
-login. The publisher MUST allow only one active consumer connection, MUST
+address is the transport capability; owner-only GitHub login additionally
+protects the hosted directory and invitation redemption. The publisher MUST allow only one active consumer connection, MUST
 reject a second simultaneous connection, and MAY accept a replacement after
 the active browser or MCP session disconnects. Exiting the publisher MUST close
 the Tailcat server, the console connection, and any listener it created.

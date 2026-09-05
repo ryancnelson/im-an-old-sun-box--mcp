@@ -1,5 +1,10 @@
 # Tailcat console transport for browsers and MCP
 
+> Access update (2026-09-04): the owner selected GitHub OAuth restricted to
+> `ryancnelson` / numeric ID `347171`, superseding this document's no-login rule.
+> See `2026-09-04-pipeline-console-discovery.md` and SPEC 15.3 for the static
+> WASM data path plus authentication/invitation service boundary.
+
 ## Goal
 
 Let a browser or MCP agent attach to an arbitrary serial-console Unix socket
